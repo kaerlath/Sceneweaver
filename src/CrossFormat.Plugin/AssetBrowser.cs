@@ -101,7 +101,7 @@ public sealed partial class Plugin
                 ImGui.TextDisabled("Drag to orbit  |  Wheel to zoom");
                 if (ImGui.Button("Fit model")) previews.ResetView();
                 ImGui.SameLine(); previews.DrawViewOptions();
-                ImGui.TextWrapped("Shaded geometry preview; materials and animation are not rendered.");
+                ImGui.TextWrapped("Base-color textures with preview lighting. Special shaders and animation may look different in game.");
             }
             else ImGui.TextWrapped(previewAsset.Kind == AssetKind.Vfx
                 ? "This effect is indexed and can be added, but animated VFX cannot yet be rendered in this panel. No effect is spawned."

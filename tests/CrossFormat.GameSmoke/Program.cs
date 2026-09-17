@@ -22,6 +22,7 @@ for (int i = 0; i < scene.Objects.Count; i++)
 }
 Console.WriteLine($"Real scene: {scene.Objects.Count} objects. Same-format transform, path and color round-trip passed. {plan.Issues.Count(i=>i.Omitted)} omissions across exports.");
 using var game = new GameData(args[1], new LuminaOptions());
+ColorPreviewSmoke.Run(game, args[2]);
 var asset = scene.Objects.First(o => o.AssetPath.EndsWith(".mdl", StringComparison.OrdinalIgnoreCase));
 var file = game.GetFile<MdlFile>(asset.AssetPath) ?? throw new Exception("Real game model was not found.");
 var mesh = ModelGeometry.Decode(file);

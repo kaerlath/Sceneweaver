@@ -4,7 +4,7 @@
   "Punchline": "One scene. Multiple stages.",
   "Description": "Canonical scene editor, conversion reports, dual-save and asset thumbnails. Open with /sceneweaver. Development build; in-game validation required.",
   "InternalName": "Sceneweaver",
-  "AssemblyVersion": "0.2.0.0",
+  "AssemblyVersion": "0.3.0.0",
   "DalamudApiLevel": 15,
   "ApplicableVersion": "any",
   "Tags": ["housing", "editor", "stagehand", "intoner"]

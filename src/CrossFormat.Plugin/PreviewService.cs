@@ -16,18 +16,19 @@ internal sealed class PreviewService(IDataManager data, ITextureProvider texture
     private volatile bool disposed;
     private float yaw = .65f, pitch = -.35f, zoom = 1;
     private Vector2 pan;
-    private bool autoRotate, wireframe;
+    private bool autoRotate, wireframe, showColors = true;
     private string lastAsset = "";
     private MeshPreview? projectedMesh;
     private float projectedYaw = float.NaN, projectedPitch = float.NaN;
     private Triangle[] projected = [];
-    private sealed record Triangle(Vector2 A, Vector2 B, Vector2 C, uint Color, float Depth);
+    private sealed record Triangle(Vector2 A, Vector2 B, Vector2 C, uint Color, uint LitWhite, float Depth, int Index, TextureTriangle[] TextureParts);
 
     public void ResetView() { yaw = .65f; pitch = -.35f; zoom = 1; pan = Vector2.Zero; }
     public void DrawViewOptions()
     {
         ImGui.Checkbox("Auto rotate", ref autoRotate);
         ImGui.SameLine(); ImGui.Checkbox("Wireframe", ref wireframe);
+        ImGui.Checkbox("Show colors", ref showColors);
     }
 
     public void Draw(SceneObject asset, Vector2 size, bool interactive = false)
@@ -114,16 +115,50 @@ internal sealed class PreviewService(IDataManager data, ITextureProvider texture
                     var normal = Vector3.Cross(b - a, c - a);
                     if (normal.LengthSquared() < 1e-12f) continue;
                     float shade = .24f + .72f * MathF.Abs(Vector3.Dot(Vector3.Normalize(normal), Vector3.Normalize(new Vector3(-1, 2, -3))));
+                    var parts = mesh.TextureTiles[t / 3];
                     triangles.Add(new(new(a.X, -a.Y), new(b.X, -b.Y), new(c.X, -c.Y),
-                        ImGui.ColorConvertFloat4ToU32(new Vector4(shade * .8f, shade * .9f, shade, 1)), (a.Z + b.Z + c.Z) / 3));
+                        ImGui.ColorConvertFloat4ToU32(new Vector4(shade * .8f, shade * .9f, shade, 1)),
+                        ImGui.ColorConvertFloat4ToU32(new Vector4(new Vector3(.55f + shade * .45f), 1)), (a.Z + b.Z + c.Z) / 3, t, parts));
                 }
                 projected = triangles.OrderBy(t => t.Depth).ToArray();
             }
             Vector2 Screen(Vector2 v) => origin + size / 2 + pan + v * (MathF.Min(size.X, size.Y) * .43f * zoom);
+            // Resolve once per material per frame; the host owns/caches these texture wrappers.
+            var handles = new ImTextureID[mesh.Materials.Length];
+            int loadedColors = 0;
+            if (showColors && !wireframe)
+                for (int m = 0; m < mesh.Materials.Length; m++)
+                {
+                    if (mesh.Materials[m].TexturePath is not { } texturePath) continue;
+                    try
+                    {
+                        var wrap = textures.GetFromGame(texturePath).GetWrapOrDefault();
+                        if (wrap != null) { handles[m] = wrap.Handle; loadedColors++; }
+                    }
+                    catch { /* Texture failure leaves the geometry visible. */ }
+                }
             foreach (var triangle in projected)
             {
                 if (wireframe) draw.AddTriangle(Screen(triangle.A), Screen(triangle.B), Screen(triangle.C), 0xFFDAC083, 1);
-                else draw.AddTriangleFilled(Screen(triangle.A), Screen(triangle.B), Screen(triangle.C), triangle.Color);
+                else
+                {
+                    int t = triangle.Index;
+                    int material = mesh.TriangleMaterials[t / 3];
+                    if (showColors && triangle.TextureParts.Length > 0 && !handles[material].Equals(default(ImTextureID)))
+                    {
+                        // A degenerate second triangle lets ImGui render a textured triangle safely.
+                        Vector2 Point(TextureVertex v) => Screen(triangle.A + (triangle.B - triangle.A) * v.Position.X + (triangle.C - triangle.A) * v.Position.Y);
+                        foreach (var part in triangle.TextureParts)
+                            draw.AddImageQuad(handles[material], Point(part.A), Point(part.B), Point(part.C), Point(part.C), part.A.UV, part.B.UV, part.C.UV, part.C.UV, triangle.LitWhite);
+                    }
+                    else draw.AddTriangleFilled(Screen(triangle.A), Screen(triangle.B), Screen(triangle.C), triangle.Color);
+                }
+            }
+            if (showColors && !wireframe)
+            {
+                draw.AddText(origin + new Vector2(10, 10), 0xFFE2D3BC, $"Color textures: {loadedColors}/{mesh.Materials.Length}");
+                if (hovered && mesh.Materials.Any(m => m.Note != null))
+                    ImGui.SetTooltip(string.Join("\n", mesh.Materials.Select(m => m.Note).Where(n => n != null).Distinct()));
             }
             draw.AddText(origin + new Vector2(10, size.Y - 24), 0xFFE2D3BC,
                 $"{mesh.Size.X:0.#} x {mesh.Size.Y:0.#} x {mesh.Size.Z:0.#} game units" + (mesh.Simplified ? "  |  simplified" : ""));
@@ -136,7 +171,8 @@ internal sealed class PreviewService(IDataManager data, ITextureProvider texture
         try
         {
             var file = Path.IsPathRooted(path) ? data.GameData.GetFileFromDisk<MdlFile>(path) : data.GetFile<MdlFile>(path);
-            return file == null ? new([], [], "This catalog path is not available in the installed game data.") : ModelGeometry.Decode(file);
+            return file == null ? new([], [], "This catalog path is not available in the installed game data.")
+                : ModelGeometry.Decode(file, p => data.GetFile<MtrlFile>(p), path);
         }
         catch (Exception e) { return new([], [], e.Message); }
     }
