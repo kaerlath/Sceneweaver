@@ -18,6 +18,14 @@ Shortcut: `/swedit`. The earlier `/crossedit` command remains an alias. Existing
 
 ## Build and load
 
+For installation through Dalamud's plugin installer, add this address under **Settings → Experimental → Custom Plugin Repositories**, enable it, and save:
+
+```text
+https://raw.githubusercontent.com/kaerlath/Sceneweaver/main/repo.json
+```
+
+Refresh the plugin installer, search for **Sceneweaver**, and install it. This repository currently distributes the development preview; in-game validation is still pending.
+
 Requires .NET 10 and a current Dalamud API 15 installation. On Windows, the build looks in `%APPDATA%/XIVLauncher/addon/Hooks/dev`; set `DALAMUD_HOME` to override it.
 
 ```powershell

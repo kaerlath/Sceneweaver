@@ -1,0 +1,28 @@
+[
+  {
+    "Author": "Sceneweaver contributors",
+    "Name": "Sceneweaver",
+    "InternalName": "Sceneweaver",
+    "AssemblyVersion": "0.1.0.0",
+    "Description": "Development preview: shared scene editor for Intoner and Stagehand, with dual-save, conversion reports and untextured asset previews. Open with /sceneweaver. In-game validation is pending.",
+    "ApplicableVersion": "any",
+    "Tags": [
+      "housing",
+      "editor",
+      "stagehand",
+      "intoner"
+    ],
+    "DalamudApiLevel": 15,
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "LoadPriority": 0,
+    "Punchline": "One scene. Multiple stages.",
+    "AcceptsFeedback": true,
+    "RepoUrl": "https://github.com/kaerlath/Sceneweaver",
+    "DownloadLinkInstall": "https://github.com/kaerlath/Sceneweaver/releases/download/v0.1.0/Sceneweaver-0.1.0.zip",
+    "DownloadLinkUpdate": "https://github.com/kaerlath/Sceneweaver/releases/download/v0.1.0/Sceneweaver-0.1.0.zip",
+    "DownloadLinkTesting": "https://github.com/kaerlath/Sceneweaver/releases/download/v0.1.0/Sceneweaver-0.1.0.zip",
+    "LastUpdate": 1789610892
+  }
+]
