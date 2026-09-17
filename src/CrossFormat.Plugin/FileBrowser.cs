@@ -31,7 +31,7 @@ public sealed partial class Plugin
         var initial = SaveLocations.ExistingDirectory(recentFolders.GetValueOrDefault(kind) ?? "", save ? Path.GetDirectoryName(currentPath) ?? "" : home, home,
             kind == "Stagehand" ? locations.StagehandAutosave : "", pi.GetPluginConfigDirectory());
         pickedFile = accept; activePickerKind = kind;
-        filePicker = NativeFilePicker.Show(save ? $"Save {kind} file" : $"Open {kind} file", initial, save, save ? Path.GetFileName(currentPath) : "", image);
+        filePicker = NativeFilePicker.Show(save ? $"Save {kind} file" : $"Open {kind} file", initial, save, save ? Path.GetFileName(currentPath) : "", image, kind == "Mod");
     }
 
     private void CompletePicker()

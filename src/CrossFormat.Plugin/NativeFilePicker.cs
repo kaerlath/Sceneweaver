@@ -40,7 +40,7 @@ internal static class NativeFilePicker
     [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetSaveFileNameW([In, Out] OpenFileName options);
     [DllImport("comdlg32.dll")] private static extern uint CommDlgExtendedError();
 
-    public static Task<string?> Show(string title, string directory, bool save = false, string fileName = "", bool image = false)
+    public static Task<string?> Show(string title, string directory, bool save = false, string fileName = "", bool image = false, bool mod = false)
     {
         var result = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         nint owner = Process.GetCurrentProcess().MainWindowHandle;
@@ -59,6 +59,7 @@ internal static class NativeFilePicker
                     Flags = 0x00080000 | 0x00800000 | 0x00000008 | 0x00000800 | (save ? 0x00000002u : 0x00001000u),
                 };
                 if (image) { options.Filter = "Preview images (*.png;*.jpg;*.jpeg)\0*.png;*.jpg;*.jpeg\0\0"; options.DefaultExtension = "png"; }
+                if (mod) { options.Filter = "Penumbra package or installed mod metadata (*.pmp;meta.json)\0*.pmp;meta.json\0\0"; options.DefaultExtension = "pmp"; }
                 bool accepted = save ? GetSaveFileNameW(options) : GetOpenFileNameW(options);
                 if (accepted) result.TrySetResult(Marshal.PtrToStringUni(buffer));
                 else

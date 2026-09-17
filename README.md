@@ -16,6 +16,7 @@ Shortcut: `/swedit`. The earlier `/crossedit` command remains an alias. Existing
 - Built-in catalog of 117,677 game paths from Stagehand: 104,246 models, 8,161 VFX and 5,270 sounds. Browse folders, search paths and save favorites with an empty scene.
 - Resizable folder/list/preview workspace. Selecting a model displays actual game geometry and supported base-color textures in an isolated side panel; orbit, pan, zoom, fit, auto-rotate and wireframe controls help inspect large objects without spawning them. **Show colors** toggles textures, enabled by default.
 - Native Windows open/save dialogs start in Stagehand's configured library or Intoner's layouts folder, then remember each format's last folder. Stagehand autosaves have a separate open button.
+- A **Mods** library imports Penumbra `.pmp` packages or installed `meta.json` files, with Single/Multi option selection. Selected resource files are embedded, models preview using their modded materials/textures, and models/VFX/sounds can be added with Stagehand-compatible bindings.
 - CLI conversion and automated tests outside the game.
 
 ## Build and load
@@ -34,7 +35,7 @@ Requires .NET 10 and a current Dalamud API 15 installation. On Windows, the buil
 ./build.ps1
 ```
 
-The development DLL is `src/CrossFormat.Plugin/bin/Release/Sceneweaver.dll`. The distributable bundle is `dist/Sceneweaver-0.3.0.zip`. Keep all DLLs in the bundle together. Add the development DLL through Dalamud's development-plugin loading settings, load it, then use `/sceneweaver`. The plugin is not installed or enabled automatically by this build.
+The development DLL is `src/CrossFormat.Plugin/bin/Release/Sceneweaver.dll`. The distributable bundle is `dist/Sceneweaver-0.4.0.zip`. Keep all DLLs in the bundle together. Add the development DLL through Dalamud's development-plugin loading settings, load it, then use `/sceneweaver`. The plugin is not installed or enabled automatically by this build.
 
 ## Workflow
 
@@ -56,12 +57,16 @@ Use `--allow-omissions` only after reviewing omissions, and `--overwrite` when r
 
 ## Compatibility boundaries
 
+For mod assets, open **Mods → Import mod**, choose a `.pmp` or the installed mod's `meta.json`, review its options, then **Prepare selected files → Add mod to this project**. Select a resource to preview it and use **Add mod asset to scene**. Texture-only mods can be applied to an existing selected Scene object using **Apply mod to selected scene object**. Existing Stagehand modpacks appear in the same library. Remove a binding in the Scene inspector.
+
+Imports support ordinary file replacements, game-file swaps and Single/Multi option groups; metadata manipulations and advanced groups are rejected. Install `.ttmp`/`.ttmp2` files in Penumbra first, then import the resulting metadata subject to those limits. Imports embed up to 64 MB of selected resource data and 8192 mappings; project files are limited to 256 MB. The mod files are snapshots, not live links to installed Penumbra settings. The editor does not activate mods or modify Penumbra collections. Disposable embedded preview files live under `mod-preview-cache` in Sceneweaver's configuration directory and may be cleared while the plugin is unloaded.
+
 | Data | Behavior |
 |---|---|
 | Background `.mdl`, VFX `.avfx`, lights | Shared fields convert both ways. Actual game resources must exist. |
 | Intoner furniture `.sgb` | Preserved and editable in canonical/Intoner output; omitted from Stagehand. No SGB expansion implemented. |
 | Stagehand weapons and sounds | Preserved in canonical/Stagehand output; transforms and names editable. Omitted from Intoner. |
-| Stagehand embedded modpacks | Preserved in Stagehand/canonical files. Bound objects omitted from Intoner because resource bindings cannot be safely translated. |
+| Stagehand embedded modpacks / imported Penumbra resources | Browsable, previewable and preserved in Stagehand/canonical files. Bound objects omitted from Intoner because resource bindings cannot be safely translated. |
 | Intoner collections | IDs and source metadata preserved; collection files/resources are not bundled or converted. |
 | Intoner rain, VFX playback, location, folder and lock data | Preserved in canonical/Intoner. No fabricated Stagehand equivalent. |
 | Unknown JSON fields | Full raw source documents retained canonically. Stagehand extra fields retained when permitted by its serializer. Intoner exports contain only its strict current schema. |
@@ -79,9 +84,9 @@ An unsaved project is written to `recovery.cross.json` in the plugin configurati
 
 ## Validation status
 
-The Release build and 32 automated conversion/save/catalog/folder tests pass locally. A real five-object Stagehand autosave was converted with zero object omissions; Stagehand round-trip positions, rotations, scales, paths and colors matched. A real tree model was decoded from installed game data (1,534 vertices, 1,612 triangles), and its normalized fit and original dimensions were checked.
+The Release build and 41 automated conversion/save/catalog/folder/mod tests pass locally. A real five-object Stagehand autosave was converted with zero object omissions; Stagehand round-trip positions, rotations, scales, paths and colors matched. A real tree model was decoded from installed game data (1,534 vertices, 1,612 triangles), and its normalized fit and original dimensions were checked. A private fixture embedded real model/material/texture data at a nonexistent game path; preview loading resolved the embedded resources after canonical and Stagehand round trips.
 
-The 0.2.0 UI was tested by the user in game. Version 0.3.0's texture rendering has **not** yet been checked inside Dalamud. Additional texture tests and a standalone colored rendering of actual game geometry/textures passed. Exports have **not** been visually compared in Intoner/Stagehand. Compilation and schema tests do not prove in-game behavior. Next validation steps are in `docs/IN_GAME_VALIDATION.md`.
+The 0.2.0 UI was tested by the user in game. The newer texture rendering and Mods UI have **not** yet been checked inside Dalamud. Additional texture tests and a standalone colored rendering of actual game geometry/textures passed. Exports have **not** been visually compared in Intoner/Stagehand. Compilation and schema tests do not prove in-game behavior. Next validation steps are in `docs/IN_GAME_VALIDATION.md`.
 
 ## Source and license
 

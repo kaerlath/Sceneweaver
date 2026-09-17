@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Numerics;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Plugin.Services;
 using Lumina.Data.Files;
@@ -11,6 +12,17 @@ namespace CrossFormat.Plugin;
 
 internal sealed class PreviewService(IDataManager data, ITextureProvider textures) : IDisposable
 {
+    public string ModCacheDirectory { get; set; } = "";
+    private JsonObject? modSource;
+    private int modCount;
+    private Dictionary<string, JsonObject> modpacks = [];
+    public void SetModpacks(JsonObject? source)
+    {
+        if (ReferenceEquals(source, modSource) && (source?.Count ?? 0) == modCount) return;
+        modSource = source; modCount = source?.Count ?? 0;
+        modpacks = source?.Where(p => p.Value is JsonObject).ToDictionary(p => p.Key, p => (JsonObject)p.Value!.DeepClone()) ?? [];
+        cache.Clear(); projectedMesh = null;
+    }
     private readonly ConcurrentDictionary<string, Task<MeshPreview>> cache = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim workers = new(2);
     private volatile bool disposed;
@@ -34,7 +46,8 @@ internal sealed class PreviewService(IDataManager data, ITextureProvider texture
     public void Draw(SceneObject asset, Vector2 size, bool interactive = false)
     {
         size = Vector2.Max(size, new Vector2(30));
-        if (lastAsset != asset.AssetPath) { lastAsset = asset.AssetPath; ResetView(); }
+        string packId = ModResources.PackId(asset), cacheKey = packId + "|" + asset.AssetPath;
+        if (lastAsset != cacheKey) { lastAsset = cacheKey; ResetView(); }
         if (!string.IsNullOrWhiteSpace(asset.PreviewImagePath) && File.Exists(asset.PreviewImagePath))
         {
             var image = textures.GetFromFile(asset.PreviewImagePath).GetWrapOrDefault();
@@ -85,13 +98,14 @@ internal sealed class PreviewService(IDataManager data, ITextureProvider texture
                     asset.Kind == AssetKind.Vfx ? "VFX preview is not yet available" : asset.Kind == AssetKind.Sound ? "Audio preview is not yet available" : "No model geometry for this asset");
                 return;
             }
-            if (cache.Count >= 24 && !cache.ContainsKey(asset.AssetPath))
+            if (cache.Count >= 24 && !cache.ContainsKey(cacheKey))
                 foreach (var key in cache.Where(p => p.Value.IsCompleted).Select(p => p.Key).Take(8)) cache.TryRemove(key, out _);
-            if (cache.Count >= 32 && !cache.ContainsKey(asset.AssetPath)) { draw.AddText(origin + new Vector2(16, 16), 0xFFC6C6C6, "Waiting for earlier previews..."); return; }
-            var task = cache.GetOrAdd(asset.AssetPath, path => Task.Run(async () =>
+            if (cache.Count >= 32 && !cache.ContainsKey(cacheKey)) { draw.AddText(origin + new Vector2(16, 16), 0xFFC6C6C6, "Waiting for earlier previews..."); return; }
+            var pack = modpacks.GetValueOrDefault(packId);
+            var task = cache.GetOrAdd(cacheKey, _ => Task.Run(async () =>
             {
                 await workers.WaitAsync();
-                try { return disposed ? new([], [], "Preview closed") : Load(path); }
+                try { return disposed ? new([], [], "Preview closed") : packId.Length > 0 && pack == null ? new([], [], "This object's modpack is missing from the project.") : Load(asset.AssetPath, pack); }
                 finally { workers.Release(); }
             }));
             if (!task.IsCompletedSuccessfully) { draw.AddText(origin + new Vector2(16, 16), 0xFFC6C6C6, "Loading model from game data..."); return; }
@@ -132,7 +146,7 @@ internal sealed class PreviewService(IDataManager data, ITextureProvider texture
                     if (mesh.Materials[m].TexturePath is not { } texturePath) continue;
                     try
                     {
-                        var wrap = textures.GetFromGame(texturePath).GetWrapOrDefault();
+                        var wrap = (Path.IsPathRooted(texturePath) ? textures.GetFromFile(texturePath) : textures.GetFromGame(texturePath)).GetWrapOrDefault();
                         if (wrap != null) { handles[m] = wrap.Handle; loadedColors++; }
                     }
                     catch { /* Texture failure leaves the geometry visible. */ }
@@ -166,13 +180,24 @@ internal sealed class PreviewService(IDataManager data, ITextureProvider texture
         finally { draw.PopClipRect(); }
     }
 
-    private MeshPreview Load(string path)
+    private MeshPreview Load(string path, JsonObject? pack)
     {
         try
         {
-            var file = Path.IsPathRooted(path) ? data.GameData.GetFileFromDisk<MdlFile>(path) : data.GetFile<MdlFile>(path);
-            return file == null ? new([], [], "This catalog path is not available in the installed game data.")
-                : ModelGeometry.Decode(file, p => data.GetFile<MtrlFile>(p), path);
+            var resolved = ModResources.Resolve(pack, path, ModCacheDirectory);
+            var file = resolved.Disk ? data.GameData.GetFileFromDisk<MdlFile>(resolved.Path) : data.GetFile<MdlFile>(resolved.Path);
+            if (file == null) return new([], [], "This model is not available in game data or the modpack.");
+            var mesh = ModelGeometry.Decode(file, p =>
+            {
+                var material = ModResources.Resolve(pack, p, ModCacheDirectory);
+                return material.Disk ? data.GameData.GetFileFromDisk<MtrlFile>(material.Path) : data.GetFile<MtrlFile>(material.Path);
+            }, resolved.Disk ? path : resolved.Path);
+            return mesh with { Materials = mesh.Materials.Select(m =>
+            {
+                if (m.TexturePath == null) return m;
+                try { return m with { TexturePath = ModResources.Resolve(pack, m.TexturePath, ModCacheDirectory).Path }; }
+                catch (Exception e) { return m with { TexturePath = null, Note = "Mod texture unavailable: " + e.Message }; }
+            }).ToArray() };
         }
         catch (Exception e) { return new([], [], e.Message); }
     }

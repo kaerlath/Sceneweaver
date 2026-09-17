@@ -8,10 +8,10 @@ public sealed record SavePlan(IReadOnlyList<SaveTarget> Targets, IReadOnlyList<C
 
 public static class ProjectFiles
 {
-    public const long MaxInputBytes = 64 * 1024 * 1024;
+    public const long MaxInputBytes = 256 * 1024 * 1024;
     public static string Read(string path)
     {
-        if (new FileInfo(path).Length > MaxInputBytes) throw new InvalidDataException("File exceeds the 64 MB import limit.");
+        if (new FileInfo(path).Length > MaxInputBytes) throw new InvalidDataException("File exceeds the 256 MB project import limit.");
         return File.ReadAllText(path);
     }
     public static string Hash(string path) => File.Exists(path) ? Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))) : "missing";
@@ -31,6 +31,7 @@ public static class ProjectFiles
     public static void Commit(SavePlan plan, Action<int>? beforeReplace = null)
     {
         var targets = plan.Targets.Select(t => t with { Path = Path.GetFullPath(t.Path) }).ToArray();
+        if (targets.Any(t => Encoding.UTF8.GetByteCount(t.Content) > MaxInputBytes)) throw new InvalidDataException("Output exceeds the 256 MB project limit. Split large mod libraries between projects.");
         if (targets.Select(t => t.Path).Distinct(StringComparer.OrdinalIgnoreCase).Count() != targets.Length) throw new InvalidDataException("Duplicate destination path.");
         var token = Guid.NewGuid().ToString("N");
         var staged = new List<(SaveTarget Target, string Temp, string Backup, bool Existed)>();

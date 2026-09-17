@@ -129,6 +129,8 @@ public static class SceneCodec
         List<ConversionIssue> issues = [];
         foreach (var o in s.Objects)
         {
+            var modId = ModResources.PackId(o);
+            if (modId.Length > 0 && !ModResources.Packs(s).ContainsKey(modId)) throw new InvalidDataException($"{o.Name}: the referenced modpack is missing. Reimport it or remove the binding before Stagehand export.");
             if (o.Kind is AssetKind.Furniture or AssetKind.Unknown) { issues.Add(new(o.Name, "No supported Stagehand object type; retained in canonical project.", true)); continue; }
             if (Path.IsPathRooted(o.AssetPath)) { issues.Add(new(o.Name, "A disk asset needs a Stagehand modpack with material/texture bindings; omitted rather than writing an invalid game path.", true)); continue; }
             ObjectDefinition d = o.Kind switch

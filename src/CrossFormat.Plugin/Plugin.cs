@@ -32,6 +32,7 @@ public sealed partial class Plugin : IDalamudPlugin
     {
         pi = pluginInterface; commands = commandManager; previews = new(data, textures);
         var folder = pi.GetPluginConfigDirectory();
+        previews.ModCacheDirectory = Path.Combine(folder, "mod-preview-cache");
         InitializeLocations(folder);
         libraryPath = Path.Combine(folder, "asset-library.json");
         if (File.Exists(libraryPath))
@@ -50,6 +51,10 @@ public sealed partial class Plugin : IDalamudPlugin
     private void Edit(Action action)
     {
         undo.Push(JsonSerializer.Serialize(scene, ProjectJson.Options));
+        // Embedded mod resources can make snapshots large. Bound undo memory as well as count.
+        long snapshotBytes = 0;
+        var bounded = undo.TakeWhile((value, index) => { snapshotBytes += value.Length * 2L; return index == 0 || snapshotBytes <= 128 * 1024 * 1024; }).Reverse().ToArray();
+        undo.Clear(); foreach (var value in bounded) undo.Push(value);
         if (undo.Count > 100) { var recent = undo.Take(100).Reverse().ToArray(); undo.Clear(); foreach (var snapshot in recent) undo.Push(snapshot); }
         redo.Clear(); action(); scene.Revision++; dirty = true; pending = null;
     }
@@ -63,6 +68,7 @@ public sealed partial class Plugin : IDalamudPlugin
     {
         CompletePicker();
         if (!open) return;
+        previews.SetModpacks(scene.StagehandRoot["EmbeddedModpacks"] as JsonObject);
         ImGui.SetNextWindowSize(new(1280, 860), ImGuiCond.FirstUseEver);
         ImGui.SetNextWindowSizeConstraints(new(980, 650), new(float.MaxValue, float.MaxValue));
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(20, 16));
@@ -98,6 +104,7 @@ public sealed partial class Plugin : IDalamudPlugin
             {
                 if (ImGui.BeginTabItem("Discover assets")) { DrawAssets(); ImGui.EndTabItem(); }
                 if (ImGui.BeginTabItem("Scene")) { DrawScene(); ImGui.EndTabItem(); }
+                if (ImGui.BeginTabItem("Mods")) { DrawMods(); ImGui.EndTabItem(); }
                 if (ImGui.BeginTabItem("Save & export")) { DrawFiles(); ImGui.EndTabItem(); }
                 ImGui.EndTabBar();
             }
@@ -140,6 +147,13 @@ public sealed partial class Plugin : IDalamudPlugin
     private void DrawInspector(SceneObject o)
     {
         ImGui.TextDisabled("OBJECT INSPECTOR");
+        if (ModResources.PackId(o).Length > 0)
+        {
+            ImGui.TextWrapped("Mod binding: " + (ModResources.Packs(scene)[ModResources.PackId(o)]?["DisplayName"]?.GetValue<string>() ?? "Missing modpack"));
+            ImGui.BeginDisabled(o.Locked);
+            if (ImGui.Button("Remove mod binding")) Edit(() => o.StagehandSource["ModpackId"] = "");
+            ImGui.EndDisabled();
+        }
         previews.Draw(o, new(Math.Max(180, ImGui.GetContentRegionAvail().X), 220), true);
         var locked = o.Locked; if (ImGui.Checkbox("Locked", ref locked)) Edit(() => o.Locked = locked);
         ImGui.BeginDisabled(o.Locked || o.Kind == AssetKind.Unknown);
@@ -167,11 +181,14 @@ public sealed partial class Plugin : IDalamudPlugin
         if (ImGui.Button("Duplicate")) Edit(() => { var copy = JsonSerializer.Deserialize<SceneObject>(JsonSerializer.Serialize(o, ProjectJson.Options), ProjectJson.Options)!; copy.Id = Guid.NewGuid(); copy.StagehandId = ""; copy.Name += " copy"; scene.Objects.Add(copy); selected = copy.Id; });
         ImGui.SameLine(); if (ImGui.Button("Delete")) Edit(() => scene.Objects.Remove(o));
         ImGui.EndDisabled();
+        ImGui.BeginDisabled(ModResources.PackId(o).Length > 0);
         if (ImGui.Button("Save as favorite")) Run(() =>
         {
             assets.Add(JsonSerializer.Deserialize<SceneObject>(JsonSerializer.Serialize(o, ProjectJson.Options), ProjectJson.Options)!);
             SaveLibrary(); lastQuery = null; status = "Asset saved to favorites.";
         });
+        ImGui.EndDisabled();
+        if (ModResources.PackId(o).Length > 0) ImGui.TextDisabled("Mod assets are kept in this project's Mods library.");
     }
 
     private void DrawLight(SceneObject o)

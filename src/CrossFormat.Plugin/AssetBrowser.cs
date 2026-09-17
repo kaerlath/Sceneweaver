@@ -116,7 +116,7 @@ public sealed partial class Plugin
             }
             ImGui.EndDisabled();
             bool favorite = assets.Any(a => a.AssetPath == previewAsset.AssetPath);
-            ImGui.BeginDisabled(favorite);
+            ImGui.BeginDisabled(favorite || ModResources.PackId(previewAsset).Length > 0);
             if (ImGui.Button(favorite ? "Saved to favorites" : "Save favorite", new(-1, 0))) Run(() =>
             {
                 assets.Add(JsonSerializer.Deserialize<SceneObject>(JsonSerializer.Serialize(previewAsset, ProjectJson.Options), ProjectJson.Options)!);
