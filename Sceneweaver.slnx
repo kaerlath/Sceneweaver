@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CrossFormat.Assets/CrossFormat.Assets.csproj" />
+    <Project Path="src/CrossFormat.Core/CrossFormat.Core.csproj" />
+    <Project Path="src/CrossFormat.Plugin/CrossFormat.Plugin.csproj" />
+    <Project Path="src/CrossFormat.Cli/CrossFormat.Cli.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CrossFormat.Tests/CrossFormat.Tests.csproj" />
+    <Project Path="tests/CrossFormat.GameSmoke/CrossFormat.GameSmoke.csproj" />
+  </Folder>
+  <Folder Name="/vendor/">
+    <Project Path="vendor/Intoner.Contracts/Intoner.Contracts.csproj" />
+    <Project Path="vendor/Stagehand.Definitions/Stagehand.Definitions.csproj" />
+  </Folder>
+</Solution>

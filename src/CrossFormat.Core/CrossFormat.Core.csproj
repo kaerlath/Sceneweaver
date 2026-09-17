@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><ProjectReference Include="../../vendor/Intoner.Contracts/Intoner.Contracts.csproj" /><ProjectReference Include="../../vendor/Stagehand.Definitions/Stagehand.Definitions.csproj" /></ItemGroup></Project>
