@@ -110,10 +110,9 @@ public sealed partial class Plugin
             ImGui.BeginDisabled(previewAsset.Kind == AssetKind.Furniture && previewAsset.IntonerSource.Count == 0);
             if (ImGui.Button("Add to scene", new(-1, 34)))
             {
-                var asset = previewAsset;
-                Edit(() => { var copy = JsonSerializer.Deserialize<SceneObject>(JsonSerializer.Serialize(asset, ProjectJson.Options), ProjectJson.Options)!; copy.Id = Guid.NewGuid(); copy.StagehandId = ""; copy.Position = Vector3.Zero; scene.Objects.Add(copy); selected = copy.Id; });
-                status = $"Added {asset.Name} to the project. Edit it in the Scene tab.";
+                Run(() => AddSceneAsset(previewAsset, live.Enabled && previewAsset.Kind is not (AssetKind.Furniture or AssetKind.Unknown)));
             }
+            if (ImGui.Button("Place in game at my character", new(-1, 0))) Run(() => AddSceneAsset(previewAsset, true));
             ImGui.EndDisabled();
             bool favorite = assets.Any(a => a.AssetPath == previewAsset.AssetPath);
             ImGui.BeginDisabled(favorite || ModResources.PackId(previewAsset).Length > 0);

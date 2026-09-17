@@ -117,7 +117,8 @@ public sealed partial class Plugin
             ImGui.TextWrapped(modPreview.Name);
             previews.Draw(modPreview, new(Math.Max(100, ImGui.GetContentRegionAvail().X), 260), true);
             previews.DrawViewOptions();
-            if (ImGui.Button("Add mod asset to scene", new(-1, 32))) Edit(() => { var item = ModResources.CreateObject(selectedModId, modPreview.AssetPath); scene.Objects.Add(item); selected = item.Id; status = "Mod asset added to the editor scene."; });
+            if (ImGui.Button("Add mod asset to scene", new(-1, 32))) Run(() => AddSceneAsset(modPreview, live.Enabled));
+            if (ImGui.Button("Place in game at my character", new(-1, 0))) Run(() => AddSceneAsset(modPreview, true));
         }
         else ImGui.TextWrapped("Select a resource to inspect it. Previewing does not spawn it in the room.");
         ImGui.EndChild(); ImGui.EndTable();

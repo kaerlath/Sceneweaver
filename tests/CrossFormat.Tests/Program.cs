@@ -153,5 +153,6 @@ Test("Dialog initial folder falls back to an existing library or parent", () =>
     Assert(SaveLocations.ExistingDirectory(Path.Combine(existing, "missing", "child")) == existing);
 });
 ModTests.Run(Test, testDirectory);
+LiveTests.Run(Test);
 Console.WriteLine($"{passed} passed; {failed} failed. Test artifacts: {testDirectory}");
 Environment.ExitCode=failed==0?0:1;

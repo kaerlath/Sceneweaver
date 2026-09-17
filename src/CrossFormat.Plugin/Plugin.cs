@@ -28,9 +28,11 @@ public sealed partial class Plugin : IDalamudPlugin
     private Action? pendingDestructive;
     private int assetPage;
 
-    public Plugin(IDalamudPluginInterface pluginInterface, ICommandManager commandManager, IDataManager data, ITextureProvider textures)
+    public Plugin(IDalamudPluginInterface pluginInterface, ICommandManager commandManager, IDataManager data, ITextureProvider textures, IClientState clientState, IObjectTable objectTable, IFramework framework, IPluginLog log)
     {
         pi = pluginInterface; commands = commandManager; previews = new(data, textures);
+        this.clientState = clientState; this.objectTable = objectTable; this.framework = framework; this.log = log;
+        liveBackend = new(pi, clientState, objectTable); live = new(liveBackend);
         var folder = pi.GetPluginConfigDirectory();
         previews.ModCacheDirectory = Path.Combine(folder, "mod-preview-cache");
         InitializeLocations(folder);
@@ -45,6 +47,8 @@ public sealed partial class Plugin : IDalamudPlugin
         pi.UiBuilder.Draw += Draw;
         pi.UiBuilder.OpenMainUi += Open;
         pi.UiBuilder.OpenConfigUi += Open;
+        framework.Update += TickLive;
+        clientState.TerritoryChanged += OnTerritoryChanged;
     }
     private void Open() => open = true;
     private void Run(Action action) { try { action(); } catch (Exception e) { status = e.Message; } }
@@ -57,9 +61,11 @@ public sealed partial class Plugin : IDalamudPlugin
         undo.Clear(); foreach (var value in bounded) undo.Push(value);
         if (undo.Count > 100) { var recent = undo.Take(100).Reverse().ToArray(); undo.Clear(); foreach (var snapshot in recent) undo.Push(snapshot); }
         redo.Clear(); action(); scene.Revision++; dirty = true; pending = null;
+        live.MarkChanged();
     }
     private void ReplaceScene(SceneProject value)
     {
+        live.Stop("Live display hidden while switching projects.");
         scene = value; selected = Guid.Empty; undo.Clear(); redo.Clear(); pending = null; dirty = false;
     }
     private void GuardReplace(Action action) { if (dirty) pendingDestructive = action; else action(); }
@@ -88,11 +94,12 @@ public sealed partial class Plugin : IDalamudPlugin
             if (ImGui.Button("New")) GuardReplace(() => ReplaceScene(new()));
             ImGui.SameLine();
             ImGui.BeginDisabled(undo.Count == 0);
-            if (ImGui.Button("Undo")) { redo.Push(JsonSerializer.Serialize(scene, ProjectJson.Options)); scene = JsonSerializer.Deserialize<SceneProject>(undo.Pop(), ProjectJson.Options)!; dirty = true; pending = null; }
+            if (ImGui.Button("Undo")) { redo.Push(JsonSerializer.Serialize(scene, ProjectJson.Options)); scene = JsonSerializer.Deserialize<SceneProject>(undo.Pop(), ProjectJson.Options)!; dirty = true; pending = null; live.MarkChanged(); }
             ImGui.EndDisabled(); ImGui.SameLine(); ImGui.BeginDisabled(redo.Count == 0);
-            if (ImGui.Button("Redo")) { undo.Push(JsonSerializer.Serialize(scene, ProjectJson.Options)); scene = JsonSerializer.Deserialize<SceneProject>(redo.Pop(), ProjectJson.Options)!; dirty = true; pending = null; }
+            if (ImGui.Button("Redo")) { undo.Push(JsonSerializer.Serialize(scene, ProjectJson.Options)); scene = JsonSerializer.Deserialize<SceneProject>(redo.Pop(), ProjectJson.Options)!; dirty = true; pending = null; live.MarkChanged(); }
             ImGui.EndDisabled(); ImGui.SameLine(); ImGui.TextDisabled($"{scene.Name}  /  {scene.Objects.Count} objects  /  {(dirty ? "Unsaved changes" : "No unsaved changes")}");
             ImGui.Separator();
+            DrawLiveControls();
             if (pendingDestructive != null)
             {
                 ImGui.TextWrapped("This will replace your unsaved scene. Save it first or discard the changes below.");
@@ -118,9 +125,9 @@ public sealed partial class Plugin : IDalamudPlugin
     {
         var name = scene.Name;
         if (ImGui.InputText("Project name", ref name, 512)) Edit(() => scene.Name = name);
-        if (ImGui.Button("Add model")) Edit(() => { var o = new SceneObject(); scene.Objects.Add(o); selected = o.Id; });
-        ImGui.SameLine(); if (ImGui.Button("Add VFX")) Edit(() => { var o = new SceneObject { Kind = AssetKind.Vfx, Name = "New VFX" }; scene.Objects.Add(o); selected = o.Id; });
-        ImGui.SameLine(); if (ImGui.Button("Add light")) Edit(() => { var o = new SceneObject { Kind = AssetKind.Light, Name = "New light", Light = JsonSerializer.SerializeToNode(new Stagehand.Definitions.Objects.LightDefinition(), ProjectJson.Options)!.AsObject() }; scene.Objects.Add(o); selected = o.Id; });
+        if (ImGui.Button("Add model")) Edit(() => { var o = new SceneObject { Position = NewObjectPosition() }; scene.Objects.Add(o); selected = o.Id; });
+        ImGui.SameLine(); if (ImGui.Button("Add VFX")) Edit(() => { var o = new SceneObject { Kind = AssetKind.Vfx, Name = "New VFX", Position = NewObjectPosition() }; scene.Objects.Add(o); selected = o.Id; });
+        ImGui.SameLine(); if (ImGui.Button("Add light")) Edit(() => { var o = new SceneObject { Kind = AssetKind.Light, Name = "New light", Position = NewObjectPosition(), Light = JsonSerializer.SerializeToNode(new Stagehand.Definitions.Objects.LightDefinition(), ProjectJson.Options)!.AsObject() }; scene.Objects.Add(o); selected = o.Id; });
         var sceneHeight = Math.Max(240, ImGui.GetContentRegionAvail().Y - 160);
         ImGui.BeginChild("objects", new(300, sceneHeight), true);
         ImGui.TextDisabled("SCENE OBJECTS"); ImGui.Separator();
@@ -134,7 +141,7 @@ public sealed partial class Plugin : IDalamudPlugin
         if (item != null) DrawInspector(item);
         else ImGui.TextWrapped("Select an object to edit its transform and appearance.");
         ImGui.EndChild();
-        if (ImGui.CollapsingHeader("Stage placement for Intoner export"))
+        if (ImGui.CollapsingHeader("Stage placement for live display / Intoner export"))
         {
             ImGui.TextWrapped("Stagehand uses local positions. Intoner output bakes this placement into world positions. Identity is the default; these values are saved in the canonical project.");
             var p = scene.StageTranslation; var r = scene.StageRotationDegrees; var z = scene.StageUniformScale;
@@ -147,6 +154,13 @@ public sealed partial class Plugin : IDalamudPlugin
     private void DrawInspector(SceneObject o)
     {
         ImGui.TextDisabled("OBJECT INSPECTOR");
+        ImGui.BeginDisabled(o.Locked);
+        if (ImGui.Button("Move to my character")) Run(() =>
+        {
+            var position = LiveScene.LocalPosition(scene, PlayerPosition());
+            Edit(() => o.Position = position);
+        });
+        ImGui.EndDisabled();
         if (ModResources.PackId(o).Length > 0)
         {
             ImGui.TextWrapped("Mod binding: " + (ModResources.Packs(scene)[ModResources.PackId(o)]?["DisplayName"]?.GetValue<string>() ?? "Missing modpack"));
@@ -262,6 +276,9 @@ public sealed partial class Plugin : IDalamudPlugin
 
     public void Dispose()
     {
+        framework.Update -= TickLive; clientState.TerritoryChanged -= OnTerritoryChanged;
+        live.Stop("Sceneweaver unloaded.");
+        if (live.CleanupPending) log.Warning("Sceneweaver could not remove its temporary Stagehand scene on unload: {Status}", live.Status);
         pi.UiBuilder.Draw -= Draw; pi.UiBuilder.OpenMainUi -= Open; pi.UiBuilder.OpenConfigUi -= Open;
         foreach (var command in new[] { "/sceneweaver", "/swedit", "/crossedit" }) commands.RemoveHandler(command);
         previews.Dispose();

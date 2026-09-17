@@ -11,3 +11,9 @@ The local build and tests are complete; the following checks require loading the
 7. Edit a destination file externally after review. Confirm the save is rejected. Verify `.bak` recovery files on successful overwrites and recovery.cross.json after normal unload with unsaved changes.
 
 Do not treat a successful compile or the standalone mesh thumbnail as proof that all in-game rendering behavior has been validated.
+
+## Live display (0.5.0)
+
+Enable Stagehand. From an empty Sceneweaver project, select a known small model and click **Place in game at my character**. Confirm it appears near your character. Move/rotate/scale it in Scene, toggle Visible, undo/redo, duplicate and delete it. Check that modded models and VFX render through Stagehand. Use **Move to my character** with a rotated/scaled stage and verify world alignment. Show an imported scene with **Show scene here**, then confirm **Show saved placement** uses the saved transform.
+
+Close/reopen the editor (the live scene should remain), hide it, switch projects, change zones and housing rooms, log out and unload Sceneweaver (its live objects should disappear). Confirm unrelated local/temporary Stagehand scenes remain untouched. Disable Stagehand during live display, re-enable it, and check that cleanup finishes and display does not restart until requested. Check incomplete/unsupported objects are listed in live-display details. Inspect Dalamud logs for IPC errors; automated tests use a fake backend and do not prove the runtime integration.

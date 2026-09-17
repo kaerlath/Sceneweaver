@@ -17,6 +17,7 @@ Shortcut: `/swedit`. The earlier `/crossedit` command remains an alias. Existing
 - Resizable folder/list/preview workspace. Selecting a model displays actual game geometry and supported base-color textures in an isolated side panel; orbit, pan, zoom, fit, auto-rotate and wireframe controls help inspect large objects without spawning them. **Show colors** toggles textures, enabled by default.
 - Native Windows open/save dialogs start in Stagehand's configured library or Intoner's layouts folder, then remember each format's last folder. Stagehand autosaves have a separate open button.
 - A **Mods** library imports Penumbra `.pmp` packages or installed `meta.json` files, with Single/Multi option selection. Selected resource files are embedded, models preview using their modded materials/textures, and models/VFX/sounds can be added with Stagehand-compatible bindings.
+- In-game display through Stagehand's temporary-stage API: place at your character, update objects while editing, and hide the editor scene without changing saved Stagehand scenes. Requires Stagehand enabled; Intoner-only furniture remains unsupported by this live backend.
 - CLI conversion and automated tests outside the game.
 
 ## Build and load
@@ -35,12 +36,12 @@ Requires .NET 10 and a current Dalamud API 15 installation. On Windows, the buil
 ./build.ps1
 ```
 
-The development DLL is `src/CrossFormat.Plugin/bin/Release/Sceneweaver.dll`. The distributable bundle is `dist/Sceneweaver-0.4.0.zip`. Keep all DLLs in the bundle together. Add the development DLL through Dalamud's development-plugin loading settings, load it, then use `/sceneweaver`. The plugin is not installed or enabled automatically by this build.
+The development DLL is `src/CrossFormat.Plugin/bin/Release/Sceneweaver.dll`. The distributable bundle is `dist/Sceneweaver-0.5.0.zip`. Keep all DLLs in the bundle together. Add the development DLL through Dalamud's development-plugin loading settings, load it, then use `/sceneweaver`. The plugin is not installed or enabled automatically by this build.
 
 ## Workflow
 
 1. Use **Open Stagehand**, **Open Intoner**, or **Open project** at the top. Windows opens a file picker. Stagehand uses `DefinitionLibraryPath` (default Documents/Stages); Intoner uses `pluginConfigs/Intoner/objects/layouts`. Missing folders use an existing fallback. **Save & export** also offers **Open Stagehand autosave**.
-2. In **Discover assets**, browse folders or search name/path fragments. Select a result to preview it. Left-drag to orbit, right-drag to pan, scroll to zoom, and double-click or **Fit model** to reset. **Add to scene** adds it to your editor project; edit it in **Scene**. It does not place it in the live world. Save useful assets as favorites; previous asset-library entries remain available there.
+2. In **Discover assets**, browse folders or search name/path fragments. Select a result to preview it. Left-drag to orbit, right-drag to pan, scroll to zoom, and double-click or **Fit model** to reset. **Place in game at my character** adds the object at your character and enables live display through Stagehand. **Add to scene** adds offline when live display is off, or at your character when it is on. Edit transforms in **Scene**; live changes, undo, redo, visibility and deletions update automatically. Selecting a browser result alone never spawns an object. Save useful assets as favorites; previous asset-library entries remain available there.
 3. Set **Stage placement for Intoner export** if the Stagehand stage is positioned away from the identity origin. This placement remains separate from Stagehand's local definition file.
 4. In **Save & export**, choose three distinct output paths using **Browse**. Prefer new files while validating a scene. Choose **Review dual-save**, inspect omissions, and **Write reviewed files**.
 5. Keep editing the canonical `.cross.json` file. It contains source fields that cannot be stored in the other plugin's format. Reopening only a native export cannot recover those fields.
@@ -54,6 +55,8 @@ dotnet run --project src/CrossFormat.Cli -- input.json converted --write
 ```
 
 Use `--allow-omissions` only after reviewing omissions, and `--overwrite` when replacing existing outputs.
+
+To show an existing scene, use **Show scene here** to move its stage placement so the selected object's origin (or the first visible object's origin) is at your character. This changes the canonical stage placement and is used in Intoner exports. **Show saved placement** leaves that placement unchanged. The inspector's **Move to my character** moves only the selected object. **Hide in game** removes Sceneweaver's temporary stage. Closing the editor window keeps live display active; switching projects, changing areas/rooms, logout and plugin unload stop it. An interrupted cleanup is retried while Sceneweaver remains loaded. Live display does not modify persistent Stagehand scenes or require saving files first.
 
 ## Compatibility boundaries
 
@@ -74,7 +77,7 @@ Imports support ordinary file replacements, game-file swaps and Single/Multi opt
 | Local disk assets | Previewable. Omitted from Stagehand export until a complete modpack binding is provided; a disk filename is not a valid game resource path. |
 | Native clipboard formats / Intoner autosaves / library prefabs | Not imported by this version. Export a normal layout first. |
 
-Previews use static geometry and supported base-color textures under neutral preview lighting, automatically fitted regardless of world size. Models over 40,000 triangles use a sample distributed across their meshes; these are marked simplified and can have gaps. Repeating UVs are tiled within a safety budget; excessive repetition and missing textures fall back to shape shading. Layered materials use their first recognized base-color map. Color-set dyes, material blending, normal/specular lighting, glass, glow and some transparency effects can differ from the game. VFX playback, furniture shared groups, skeleton posing and weapon animation are not rendered. Sounds are indexed but not played. Some catalog paths may be absent from your game version. No live IPC scene manipulation, automatic plugin reload, or file watching is implemented.
+Side-panel previews use static geometry and supported base-color textures under neutral preview lighting, automatically fitted regardless of world size. Models over 40,000 triangles use a sample distributed across their meshes; these are marked simplified and can have gaps. Repeating UVs are tiled within a safety budget; excessive repetition and missing textures fall back to shape shading. Layered materials use their first recognized base-color map. Color-set dyes, material blending, normal/specular lighting, glass, glow and some transparency effects can differ from the game. VFX playback, furniture shared groups, skeleton posing and weapon animation are not rendered in the side panel. Sounds are indexed but not played there. In-game display uses Stagehand's renderer, including its VFX and sound support. Some catalog paths may be absent from your game version. There is no Intoner live backend, world-space manipulation gizmo, automatic plugin reload or file watching.
 
 ## Saving and recovery
 
@@ -84,9 +87,9 @@ An unsaved project is written to `recovery.cross.json` in the plugin configurati
 
 ## Validation status
 
-The Release build and 41 automated conversion/save/catalog/folder/mod tests pass locally. A real five-object Stagehand autosave was converted with zero object omissions; Stagehand round-trip positions, rotations, scales, paths and colors matched. A real tree model was decoded from installed game data (1,534 vertices, 1,612 triangles), and its normalized fit and original dimensions were checked. A private fixture embedded real model/material/texture data at a nonexistent game path; preview loading resolved the embedded resources after canonical and Stagehand round trips.
+The Release build and 50 automated conversion/save/catalog/folder/mod/live-session tests pass locally. Live tests cover placement transforms, updates, deletions, ownership, failure cleanup and location changes. The IPC signatures were checked against Stagehand source and the installed API assembly. A real five-object Stagehand autosave was converted with zero object omissions; Stagehand round-trip positions, rotations, scales, paths and colors matched. A real tree model was decoded from installed game data (1,534 vertices, 1,612 triangles), and its normalized fit and original dimensions were checked. A private fixture embedded real model/material/texture data at a nonexistent game path; preview loading resolved the embedded resources after canonical and Stagehand round trips.
 
-The 0.2.0 UI was tested by the user in game. The newer texture rendering and Mods UI have **not** yet been checked inside Dalamud. Additional texture tests and a standalone colored rendering of actual game geometry/textures passed. Exports have **not** been visually compared in Intoner/Stagehand. Compilation and schema tests do not prove in-game behavior. Next validation steps are in `docs/IN_GAME_VALIDATION.md`.
+The 0.2.0 UI was tested by the user in game. The newer texture rendering, Mods UI and live IPC display have **not** yet been verified inside Dalamud. Additional texture tests and a standalone colored rendering of actual game geometry/textures passed. Exports have **not** been visually compared in Intoner/Stagehand. Compilation and schema tests do not prove in-game behavior. Next validation steps are in `docs/IN_GAME_VALIDATION.md`.
 
 ## Source and license
 
