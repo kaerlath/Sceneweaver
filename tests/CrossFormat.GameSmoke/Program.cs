@@ -26,6 +26,9 @@ var asset = scene.Objects.First(o => o.AssetPath.EndsWith(".mdl", StringComparis
 var file = game.GetFile<MdlFile>(asset.AssetPath) ?? throw new Exception("Real game model was not found.");
 var mesh = ModelGeometry.Decode(file);
 if (mesh.Error != null || mesh.Indices.Length == 0) throw new Exception(mesh.Error ?? "Empty geometry.");
+if (mesh.Vertices.Any(v => !float.IsFinite(v.X) || v.Length() > 1.0001f)) throw new Exception("Model auto-fit escaped its unit bounds.");
+if (mesh.Size == Vector3.Zero) throw new Exception("Original model dimensions were lost.");
+Console.WriteLine($"Auto-fit passed. Original dimensions: {mesh.Size}.");
 var rotation = Matrix4x4.CreateRotationY(.65f) * Matrix4x4.CreateRotationX(-.35f);
 var vertices = mesh.Vertices.Select(v => Vector3.Transform(v, rotation)).ToArray();
 var triangles = Enumerable.Range(0, mesh.Indices.Length / 3).OrderBy(n => (vertices[mesh.Indices[n*3]].Z + vertices[mesh.Indices[n*3+1]].Z + vertices[mesh.Indices[n*3+2]].Z)/3);

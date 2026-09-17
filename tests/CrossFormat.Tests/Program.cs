@@ -103,5 +103,54 @@ Test("External edits invalidate reviewed save", () => { var a=Path.Combine(testD
 Test("Failure on second replacement rolls first file back", () => { var a=Path.Combine(testDirectory,"rollback-a"); var b=Path.Combine(testDirectory,"rollback-b"); File.WriteAllText(a,"old-a"); File.WriteAllText(b,"old-b"); var p=new SavePlan([new(a,"new-a"),new(b,"new-b")],[]); Throws(()=>ProjectFiles.Commit(p,n=>{if(n==1)throw new IOException("Injected failure");})); Assert(File.ReadAllText(a)=="old-a"); Assert(File.ReadAllText(b)=="old-b"); });
 Test("Failure after creating new file removes only new file", () => { var a=Path.Combine(testDirectory,"created-a"); var b=Path.Combine(testDirectory,"created-b"); var p=new SavePlan([new(a,"a"),new(b,"b")],[]); Throws(()=>ProjectFiles.Commit(p,n=>{if(n==1)throw new IOException("Injected failure");})); Assert(!File.Exists(a)&&!File.Exists(b)); });
 Test("Successful replacement retains recovery backup", () => { var a=Path.Combine(testDirectory,"backup"); File.WriteAllText(a,"old"); ProjectFiles.Commit(new SavePlan([new(a,"new")],[])); Assert(File.ReadAllText(a)=="new"); Assert(Directory.GetFiles(testDirectory,"backup.*.bak").Any(f=>File.ReadAllText(f)=="old")); });
+Test("Bundled game catalog is available without any scene objects", () =>
+{
+    var catalog = GameAssetCatalog.LoadBundled();
+    Assert(catalog.Assets.Count > 100000);
+    Assert(catalog.Assets.Any(a => a.Kind == AssetKind.Vfx));
+    Assert(catalog.Assets.Any(a => a.Kind == AssetKind.Sound));
+    Assert(catalog.Children("").Contains("bg"));
+    Assert(catalog.Search("g3t1_p0_tre4c", "bg", AssetKind.BgObject).Any());
+});
+Test("Catalog search combines terms, type and folder boundaries", () =>
+{
+    using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes("""
+    {"MdlPaths":["bg/room/tree.mdl","bg/rooms/tree.mdl","bg/room/chair.mdl","BG/ROOM/TREE.MDL","../bad.mdl"],"AvfxPaths":["bg/room/tree.avfx"],"ScdPaths":[]}
+    """));
+    var catalog = GameAssetCatalog.Read(stream);
+    Assert(catalog.Assets.Count == 4);
+    Assert(catalog.Search("TREE room", "bg/room", AssetKind.BgObject).Single().Path == "bg/room/tree.mdl");
+    Assert(catalog.Children("bg").SequenceEqual(new[] { "bg/room", "bg/rooms" }));
+});
+Test("Browsing catalog and creating an asset does not modify a scene", () =>
+{
+    var scene = new SceneProject(); var entry = new GameAsset("bg/example.mdl", AssetKind.BgObject);
+    var first = entry.CreateObject(); var second = entry.CreateObject();
+    Assert(scene.Objects.Count == 0); Assert(first.Id != second.Id); Assert(first.AssetPath == entry.Path);
+});
+Test("File picker defaults honor Stagehand's configured library and autosave", () =>
+{
+    var root = Path.Combine(testDirectory, "configs"); Directory.CreateDirectory(root);
+    var stage = Path.Combine(testDirectory, "custom stages"); var autosave = Path.Combine(testDirectory, "custom autosave");
+    File.WriteAllText(Path.Combine(root, "Stagehand.json"), JsonSerializer.Serialize(new { DefinitionLibraryPath = stage, AutosavePath = autosave }));
+    var locations = SaveLocations.Discover(Path.Combine(root, "Sceneweaver"), Path.Combine(testDirectory, "Documents"));
+    Assert(locations.Stagehand == stage); Assert(locations.StagehandAutosave == autosave);
+    Assert(locations.Intoner == Path.Combine(root, "Intoner", "objects", "layouts"));
+});
+Test("Missing or malformed Stagehand configuration uses documented defaults", () =>
+{
+    var root = Path.Combine(testDirectory, "default-configs"); Directory.CreateDirectory(root);
+    var docs = Path.Combine(testDirectory, "Documents");
+    var locations = SaveLocations.Discover(Path.Combine(root, "Sceneweaver"), docs);
+    Assert(locations.Stagehand == Path.Combine(docs, "Stages"));
+    File.WriteAllText(Path.Combine(root, "Stagehand.json"), "{bad");
+    Assert(SaveLocations.Discover(Path.Combine(root, "Sceneweaver"), docs).Stagehand == locations.Stagehand);
+});
+Test("Dialog initial folder falls back to an existing library or parent", () =>
+{
+    var existing = Path.Combine(testDirectory, "existing"); Directory.CreateDirectory(existing);
+    Assert(SaveLocations.ExistingDirectory(Path.Combine(testDirectory, "missing"), existing) == existing);
+    Assert(SaveLocations.ExistingDirectory(Path.Combine(existing, "missing", "child")) == existing);
+});
 Console.WriteLine($"{passed} passed; {failed} failed. Test artifacts: {testDirectory}");
 Environment.ExitCode=failed==0?0:1;

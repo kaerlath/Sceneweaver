@@ -13,7 +13,9 @@ Shortcut: `/swedit`. The earlier `/crossedit` command remains an alias. Existing
 - Convert background models, VFX and all mapped light fields both ways. Preserve other source data in the canonical project.
 - Dual-save the canonical project and both exports after showing a conversion report. Unsupported objects require acknowledgment before export.
 - Stage placement controls compose Stagehand local transforms into Intoner world transforms.
-- Asset library from imported scenes and local directory scans, searchable with paginated thumbnails. `.mdl` files use actual game/disk geometry, without spawning a game object. PNG/JPG previews and game icons are supported; light previews are schematic.
+- Built-in catalog of 117,677 game paths from Stagehand: 104,246 models, 8,161 VFX and 5,270 sounds. Browse folders, search paths and save favorites with an empty scene.
+- Resizable folder/list/preview workspace. Selecting a model displays actual game geometry in an isolated side panel; orbit, pan, zoom, fit, auto-rotate and wireframe controls help inspect large objects without spawning them.
+- Native Windows open/save dialogs start in Stagehand's configured library or Intoner's layouts folder, then remember each format's last folder. Stagehand autosaves have a separate open button.
 - CLI conversion and automated tests outside the game.
 
 ## Build and load
@@ -32,14 +34,14 @@ Requires .NET 10 and a current Dalamud API 15 installation. On Windows, the buil
 ./build.ps1
 ```
 
-The development DLL is `src/CrossFormat.Plugin/bin/Release/Sceneweaver.dll`. The distributable bundle is `dist/Sceneweaver-0.1.0.zip`. Keep all DLLs in the bundle together. Add the development DLL through Dalamud's development-plugin loading settings, load it, then use `/sceneweaver`. The plugin is not installed or enabled automatically by this build.
+The development DLL is `src/CrossFormat.Plugin/bin/Release/Sceneweaver.dll`. The distributable bundle is `dist/Sceneweaver-0.2.0.zip`. Keep all DLLs in the bundle together. Add the development DLL through Dalamud's development-plugin loading settings, load it, then use `/sceneweaver`. The plugin is not installed or enabled automatically by this build.
 
 ## Workflow
 
-1. Open **Open & save**, enter a layout or stage JSON path, and choose **Open / import**.
-2. Edit the scene. **Collect assets from scene** adds its objects to the asset browser; **Scan folder** reads local asset files. A `.sgb` scan entry needs an imported Intoner furniture payload before it can be placed. Place adds to the editor project, not the live world.
+1. Use **Open Stagehand**, **Open Intoner**, or **Open project** at the top. Windows opens a file picker. Stagehand uses `DefinitionLibraryPath` (default Documents/Stages); Intoner uses `pluginConfigs/Intoner/objects/layouts`. Missing folders use an existing fallback. **Save & export** also offers **Open Stagehand autosave**.
+2. In **Discover assets**, browse folders or search name/path fragments. Select a result to preview it. Left-drag to orbit, right-drag to pan, scroll to zoom, and double-click or **Fit model** to reset. **Add to scene** adds it to your editor project; edit it in **Scene**. It does not place it in the live world. Save useful assets as favorites; previous asset-library entries remain available there.
 3. Set **Stage placement for Intoner export** if the Stagehand stage is positioned away from the identity origin. This placement remains separate from Stagehand's local definition file.
-4. Choose three distinct output paths. Prefer new files while validating a scene. Choose **Review dual-save**, inspect omissions, and **Write reviewed files**.
+4. In **Save & export**, choose three distinct output paths using **Browse**. Prefer new files while validating a scene. Choose **Review dual-save**, inspect omissions, and **Write reviewed files**.
 5. Keep editing the canonical `.cross.json` file. It contains source fields that cannot be stored in the other plugin's format. Reopening only a native export cannot recover those fields.
 6. Import the generated layout into Intoner / load the generated definition in Stagehand. Placement, auto-load conditions and world visibility remain controlled by those plugins.
 
@@ -67,7 +69,7 @@ Use `--allow-omissions` only after reviewing omissions, and `--overwrite` when r
 | Local disk assets | Previewable. Omitted from Stagehand export until a complete modpack binding is provided; a disk filename is not a valid game resource path. |
 | Native clipboard formats / Intoner autosaves / library prefabs | Not imported by this version. Export a normal layout first. |
 
-Thumbnails are untextured static geometry, capped at 6,000 triangles. They do not render materials, VFX playback, furniture shared groups or weapon animation. Non-model assets can use an assigned image. No live IPC scene manipulation, automatic plugin reload, or file watching is implemented.
+Previews are untextured static geometry, automatically fitted regardless of world size. Models over 40,000 triangles use a sample distributed across their meshes; these are marked simplified and can have gaps. They do not render materials, VFX playback, furniture shared groups, skeleton posing or weapon animation. Sounds are indexed but not played. Non-model assets can use an assigned image. Some catalog paths may be absent from your game version. No live IPC scene manipulation, automatic plugin reload, or file watching is implemented.
 
 ## Saving and recovery
 
@@ -77,9 +79,9 @@ An unsaved project is written to `recovery.cross.json` in the plugin configurati
 
 ## Validation status
 
-The Release build and automated conversion/save tests pass locally. A real five-object Stagehand autosave was converted with zero object omissions; Stagehand round-trip positions, rotations, scales, paths and colors matched. A real tree model was decoded from the installed game data (1,534 vertices, 1,612 triangles), and its generated thumbnail was visually inspected.
+The Release build and 32 automated conversion/save/catalog/folder tests pass locally. A real five-object Stagehand autosave was converted with zero object omissions; Stagehand round-trip positions, rotations, scales, paths and colors matched. A real tree model was decoded from installed game data (1,534 vertices, 1,612 triangles), and its normalized fit and original dimensions were checked.
 
-The DLL has **not** been loaded into the running game, and exports have **not** been visually compared in Intoner/Stagehand. Compilation and schema tests do not prove in-game behavior. The next validation step is the checklist in `docs/IN_GAME_VALIDATION.md`.
+Version 0.2.0's revised UI and Windows dialogs have **not** been tested inside the running game. Standalone UI rendering could not run without Dalamud initialization. Exports have **not** been visually compared in Intoner/Stagehand. Compilation and schema tests do not prove in-game behavior. Next validation steps are in `docs/IN_GAME_VALIDATION.md`.
 
 ## Source and license
 

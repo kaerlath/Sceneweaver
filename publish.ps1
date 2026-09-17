@@ -5,7 +5,9 @@ Push-Location $PSScriptRoot
 try {
     $repository = 'kaerlath/Sceneweaver'
     $repositoryUrl = 'https://github.com/kaerlath/Sceneweaver.git'
-    $releaseTag = 'v0.1.0'
+    [xml]$project = Get-Content src/CrossFormat.Plugin/CrossFormat.Plugin.csproj
+    $version = [string]$project.Project.PropertyGroup.Version
+    $releaseTag = "v$version"
     # This checkout may have been created by Codex's sandbox account.
     # Trust only this exact directory, only for the Git invocations below.
     $trustedDirectory = 'safe.directory=' + $PSScriptRoot.Replace('\', '/')
@@ -38,16 +40,17 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Could not add the GitHub remote.' }
     }
 
+    & (Join-Path $PSScriptRoot 'build.ps1')
+    if ($LASTEXITCODE -ne 0) { throw 'Build or tests failed; no release was published.' }
+    $changesAfterBuild = git -c $trustedDirectory status --porcelain
+    if ($changesAfterBuild) { throw 'Build changed tracked source or created untracked files. Review and commit those changes before publishing a release.' }
+
     # Use GitHub CLI's credential helper only for this push; do not change global Git settings.
     git -c $trustedDirectory -c 'credential.https://github.com.helper=' -c 'credential.https://github.com.helper=!gh auth git-credential' push --set-upstream origin main
     if ($LASTEXITCODE -ne 0) { throw 'Push failed. No force push was attempted; inspect any existing remote commits before retrying.' }
     $commit = git -c $trustedDirectory rev-parse HEAD
 
-    & (Join-Path $PSScriptRoot 'build.ps1')
-    if ($LASTEXITCODE -ne 0) { throw 'Build or tests failed; no release was published.' }
-    $changesAfterBuild = git -c $trustedDirectory status --porcelain
-    if ($changesAfterBuild) { throw 'Build changed tracked source or created untracked files. Review and commit those changes before publishing a release.' }
-    git -c $trustedDirectory archive --format=zip --output=dist/Sceneweaver-source-0.1.0.zip HEAD
+    git -c $trustedDirectory archive --format=zip "--output=dist/Sceneweaver-source-$version.zip" HEAD
     if ($LASTEXITCODE -ne 0) { throw 'Could not package the committed source.' }
 
     $releaseList = gh api "repos/$repository/releases" --paginate | ConvertFrom-Json
@@ -57,7 +60,7 @@ try {
         gh release view $releaseTag --repo $repository
         return
     }
-    gh release create $releaseTag dist/Sceneweaver-0.1.0.zip dist/Sceneweaver-source-0.1.0.zip --repo $repository --target $commit --prerelease --title 'Sceneweaver 0.1.0 - Development preview' --notes-file docs/RELEASE-0.1.0.md
+    gh release create $releaseTag "dist/Sceneweaver-$version.zip" "dist/Sceneweaver-source-$version.zip" --repo $repository --target $commit --prerelease --title "Sceneweaver $version - Development preview" --notes-file "docs/RELEASE-$version.md"
     if ($LASTEXITCODE -ne 0) { throw 'Source was pushed, but release publication failed. Rerun this script to retry.' }
     gh release view $releaseTag --repo $repository --json url,isPrerelease,assets
     if ($LASTEXITCODE -ne 0) { throw 'Release was submitted, but verification failed. Check the GitHub Releases page.' }

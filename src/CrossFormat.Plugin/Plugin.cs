@@ -9,7 +9,7 @@ using Dalamud.Plugin.Services;
 
 namespace CrossFormat.Plugin;
 
-public sealed class Plugin : IDalamudPlugin
+public sealed partial class Plugin : IDalamudPlugin
 {
     private readonly IDalamudPluginInterface pi;
     private readonly ICommandManager commands;
@@ -22,9 +22,8 @@ public sealed class Plugin : IDalamudPlugin
     private Guid selected;
     private bool open, dirty, acceptOmissions;
     private string status = "Open an Intoner layout, a Stagehand definition, or a canonical project.";
-    private string inputPath = "", projectPath, intonerPath, stagehandPath, assetDirectory = "", filter = "";
+    private string inputPath = "", projectPath = "", intonerPath = "", stagehandPath = "", filter = "";
     private string libraryPath;
-    private Task<SceneObject[]>? scan;
     private SavePlan? pending;
     private Action? pendingDestructive;
     private int assetPage;
@@ -33,7 +32,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         pi = pluginInterface; commands = commandManager; previews = new(data, textures);
         var folder = pi.GetPluginConfigDirectory();
-        projectPath = Path.Combine(folder, "scene.cross.json"); intonerPath = Path.Combine(folder, "scene.intoner.json"); stagehandPath = Path.Combine(folder, "scene.stagehand.json");
+        InitializeLocations(folder);
         libraryPath = Path.Combine(folder, "asset-library.json");
         if (File.Exists(libraryPath))
         {
@@ -62,34 +61,50 @@ public sealed class Plugin : IDalamudPlugin
 
     private void Draw()
     {
+        CompletePicker();
         if (!open) return;
-        ImGui.SetNextWindowSize(new(1120, 750), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowSize(new(1280, 860), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowSizeConstraints(new(980, 650), new(float.MaxValue, float.MaxValue));
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(20, 16));
+        ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(10, 7));
+        ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 5f);
+        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(10, 8));
+        ImGui.PushStyleColor(ImGuiCol.WindowBg, new Vector4(.055f, .071f, .095f, 1));
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, new Vector4(.073f, .094f, .122f, 1));
+        ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(.11f, .23f, .30f, 1));
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(.16f, .35f, .43f, 1));
+        ImGui.PushStyleColor(ImGuiCol.Header, new Vector4(.12f, .31f, .38f, 1));
         if (ImGui.Begin("Sceneweaver###Sceneweaver", ref open))
         {
+            ImGui.TextColored(ImGui.ColorConvertFloat4ToU32(new(.4f, .85f, .95f, 1)), "SCENEWEAVER");
+            ImGui.SameLine(); ImGui.TextDisabled("One scene. Multiple stages.");
+            DrawImportButtons();
             if (ImGui.Button("New")) GuardReplace(() => ReplaceScene(new()));
             ImGui.SameLine();
             ImGui.BeginDisabled(undo.Count == 0);
             if (ImGui.Button("Undo")) { redo.Push(JsonSerializer.Serialize(scene, ProjectJson.Options)); scene = JsonSerializer.Deserialize<SceneProject>(undo.Pop(), ProjectJson.Options)!; dirty = true; pending = null; }
             ImGui.EndDisabled(); ImGui.SameLine(); ImGui.BeginDisabled(redo.Count == 0);
             if (ImGui.Button("Redo")) { undo.Push(JsonSerializer.Serialize(scene, ProjectJson.Options)); scene = JsonSerializer.Deserialize<SceneProject>(redo.Pop(), ProjectJson.Options)!; dirty = true; pending = null; }
-            ImGui.EndDisabled(); ImGui.SameLine(); ImGui.TextUnformatted(dirty ? "Unsaved changes" : "Saved / unchanged");
+            ImGui.EndDisabled(); ImGui.SameLine(); ImGui.TextDisabled($"{scene.Name}  /  {scene.Objects.Count} objects  /  {(dirty ? "Unsaved changes" : "No unsaved changes")}");
             ImGui.Separator();
-            if (ImGui.BeginTabBar("workspace"))
-            {
-                if (ImGui.BeginTabItem("Scene")) { DrawScene(); ImGui.EndTabItem(); }
-                if (ImGui.BeginTabItem("Asset browser")) { DrawAssets(); ImGui.EndTabItem(); }
-                if (ImGui.BeginTabItem("Open & save")) { DrawFiles(); ImGui.EndTabItem(); }
-                ImGui.EndTabBar();
-            }
-            ImGui.Separator(); ImGui.TextWrapped(status);
             if (pendingDestructive != null)
             {
                 ImGui.TextWrapped("This will replace your unsaved scene. Save it first or discard the changes below.");
                 if (ImGui.Button("Discard changes and continue")) { var action = pendingDestructive; pendingDestructive = null; Run(action); }
                 ImGui.SameLine(); if (ImGui.Button("Keep editing")) pendingDestructive = null;
+                ImGui.Separator();
             }
+            if (ImGui.BeginTabBar("workspace"))
+            {
+                if (ImGui.BeginTabItem("Discover assets")) { DrawAssets(); ImGui.EndTabItem(); }
+                if (ImGui.BeginTabItem("Scene")) { DrawScene(); ImGui.EndTabItem(); }
+                if (ImGui.BeginTabItem("Save & export")) { DrawFiles(); ImGui.EndTabItem(); }
+                ImGui.EndTabBar();
+            }
+            ImGui.Separator(); ImGui.TextWrapped(status);
         }
         ImGui.End();
+        ImGui.PopStyleColor(5); ImGui.PopStyleVar(4);
     }
 
     private void DrawScene()
@@ -99,12 +114,15 @@ public sealed class Plugin : IDalamudPlugin
         if (ImGui.Button("Add model")) Edit(() => { var o = new SceneObject(); scene.Objects.Add(o); selected = o.Id; });
         ImGui.SameLine(); if (ImGui.Button("Add VFX")) Edit(() => { var o = new SceneObject { Kind = AssetKind.Vfx, Name = "New VFX" }; scene.Objects.Add(o); selected = o.Id; });
         ImGui.SameLine(); if (ImGui.Button("Add light")) Edit(() => { var o = new SceneObject { Kind = AssetKind.Light, Name = "New light", Light = JsonSerializer.SerializeToNode(new Stagehand.Definitions.Objects.LightDefinition(), ProjectJson.Options)!.AsObject() }; scene.Objects.Add(o); selected = o.Id; });
-        ImGui.BeginChild("objects", new(300, 440), true);
+        var sceneHeight = Math.Max(240, ImGui.GetContentRegionAvail().Y - 160);
+        ImGui.BeginChild("objects", new(300, sceneHeight), true);
+        ImGui.TextDisabled("SCENE OBJECTS"); ImGui.Separator();
+        if (scene.Objects.Count == 0) ImGui.TextWrapped("Your scene is empty. Discover assets to preview models and add what you need, or open an existing layout above.");
         foreach (var o in scene.Objects)
         {
             if (ImGui.Selectable($"{o.Name} [{o.Kind}]##{o.Id}", selected == o.Id)) selected = o.Id;
         }
-        ImGui.EndChild(); ImGui.SameLine(); ImGui.BeginChild("inspector", new(0, 440), true);
+        ImGui.EndChild(); ImGui.SameLine(); ImGui.BeginChild("inspector", new(0, sceneHeight), true);
         var item = scene.Objects.FirstOrDefault(o => o.Id == selected);
         if (item != null) DrawInspector(item);
         else ImGui.TextWrapped("Select an object to edit its transform and appearance.");
@@ -121,7 +139,8 @@ public sealed class Plugin : IDalamudPlugin
 
     private void DrawInspector(SceneObject o)
     {
-        previews.Draw(o, new(140, 140));
+        ImGui.TextDisabled("OBJECT INSPECTOR");
+        previews.Draw(o, new(Math.Max(180, ImGui.GetContentRegionAvail().X), 220), true);
         var locked = o.Locked; if (ImGui.Checkbox("Locked", ref locked)) Edit(() => o.Locked = locked);
         ImGui.BeginDisabled(o.Locked || o.Kind == AssetKind.Unknown);
         string name = o.Name, path = o.AssetPath, folder = o.Folder, image = o.PreviewImagePath;
@@ -138,6 +157,9 @@ public sealed class Plugin : IDalamudPlugin
         if (o.Kind is AssetKind.BgObject or AssetKind.Furniture)
             if (ImGui.SliderFloat("Opacity", ref opacity, 0, 1)) Edit(() => o.Opacity = opacity);
         if (ImGui.InputText("Preview PNG/JPG", ref image, 4096)) Edit(() => o.PreviewImagePath = image);
+        ImGui.BeginDisabled(filePicker != null);
+        if (ImGui.Button("Choose preview image...")) Pick("Preview image", false, "", file => Edit(() => o.PreviewImagePath = file), true);
+        ImGui.EndDisabled();
         if (o.Kind == AssetKind.Light && ImGui.CollapsingHeader("Light parameters"))
         {
             DrawLight(o);
@@ -145,10 +167,10 @@ public sealed class Plugin : IDalamudPlugin
         if (ImGui.Button("Duplicate")) Edit(() => { var copy = JsonSerializer.Deserialize<SceneObject>(JsonSerializer.Serialize(o, ProjectJson.Options), ProjectJson.Options)!; copy.Id = Guid.NewGuid(); copy.StagehandId = ""; copy.Name += " copy"; scene.Objects.Add(copy); selected = copy.Id; });
         ImGui.SameLine(); if (ImGui.Button("Delete")) Edit(() => scene.Objects.Remove(o));
         ImGui.EndDisabled();
-        if (ImGui.Button("Add to asset library")) Run(() =>
+        if (ImGui.Button("Save as favorite")) Run(() =>
         {
             assets.Add(JsonSerializer.Deserialize<SceneObject>(JsonSerializer.Serialize(o, ProjectJson.Options), ProjectJson.Options)!);
-            SaveLibrary(); status = "Asset saved to the browser library.";
+            SaveLibrary(); lastQuery = null; status = "Asset saved to favorites.";
         });
     }
 
@@ -177,59 +199,20 @@ public sealed class Plugin : IDalamudPlugin
         if (changed) Edit(() => o.Light = JsonSerializer.SerializeToNode(light, ProjectJson.Options)!.AsObject());
     }
 
-    private void DrawAssets()
-    {
-        ImGui.TextWrapped("Browse imported scene assets or scan a local folder for .mdl, .avfx and .sgb files. Models have untextured geometry thumbnails; other assets can use a matching preview image.");
-        ImGui.InputText("Asset folder", ref assetDirectory, 4096);
-        ImGui.BeginDisabled(scan != null);
-        if (ImGui.Button("Scan folder"))
-        {
-            var dir = assetDirectory;
-            scan = Task.Run(() => Directory.EnumerateFiles(dir, "*", new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint }).Where(f => new[] { ".mdl", ".avfx", ".sgb" }.Contains(Path.GetExtension(f).ToLowerInvariant())).Take(10000).Select(f => new SceneObject
-            { Name = Path.GetFileNameWithoutExtension(f), AssetPath = f, Kind = Path.GetExtension(f).ToLowerInvariant() switch { ".avfx" => AssetKind.Vfx, ".sgb" => AssetKind.Furniture, _ => AssetKind.BgObject }, PreviewImagePath = File.Exists(Path.ChangeExtension(f, ".png")) ? Path.ChangeExtension(f, ".png") : "" }).ToArray());
-        }
-        ImGui.EndDisabled(); ImGui.SameLine();
-        if (ImGui.Button("Collect assets from scene")) Run(() => { assets.AddRange(scene.Objects.Select(o => JsonSerializer.Deserialize<SceneObject>(JsonSerializer.Serialize(o, ProjectJson.Options), ProjectJson.Options)!)); SaveLibrary(); });
-        if (scan?.IsCompleted == true) { var done = scan; scan = null; Run(() => { assets.AddRange(done.GetAwaiter().GetResult()); SaveLibrary(); status = $"Library contains {assets.Count} assets."; }); }
-        if (scan != null) ImGui.TextUnformatted("Scanning...");
-        if (ImGui.InputText("Search", ref filter, 256)) assetPage = 0;
-        var matches = assets.Where(o => (o.Name + " " + o.AssetPath).Contains(filter, StringComparison.OrdinalIgnoreCase)).ToArray();
-        assetPage = Math.Clamp(assetPage, 0, Math.Max(0, (matches.Length - 1) / 12));
-        if (ImGui.Button("Previous") && assetPage > 0) assetPage--;
-        ImGui.SameLine(); if (ImGui.Button("Next") && (assetPage + 1) * 12 < matches.Length) assetPage++;
-        ImGui.SameLine(); ImGui.TextUnformatted($"{matches.Length} assets | page {assetPage + 1}");
-        ImGui.BeginChild("assetcards", new(0, 410), true);
-        if (ImGui.BeginTable("cards", 4))
-        {
-            int cardIndex = 0;
-            foreach (var asset in matches.Skip(assetPage * 12).Take(12))
-            {
-                ImGui.TableNextColumn(); ImGui.PushID(cardIndex++); previews.Draw(asset, new(115, 100));
-                ImGui.TextWrapped(asset.Name);
-                if (ImGui.IsItemHovered()) ImGui.SetTooltip(asset.AssetPath);
-                ImGui.BeginDisabled(asset.Kind == AssetKind.Furniture && asset.IntonerSource.Count == 0);
-                if (ImGui.Button("Place in project")) Edit(() => { var copy = JsonSerializer.Deserialize<SceneObject>(JsonSerializer.Serialize(asset, ProjectJson.Options), ProjectJson.Options)!; copy.Id = Guid.NewGuid(); copy.StagehandId = ""; copy.Position = Vector3.Zero; scene.Objects.Add(copy); selected = copy.Id; status = "Asset added to the project. No world object was spawned."; });
-                ImGui.EndDisabled(); ImGui.PopID();
-            }
-            ImGui.EndTable();
-        }
-        ImGui.EndChild();
-    }
-
     private void SaveLibrary() => ProjectFiles.Commit(new SavePlan([new(libraryPath, JsonSerializer.Serialize(assets, ProjectJson.Options))], []));
 
     private void DrawFiles()
     {
-        ImGui.InputText("Open file", ref inputPath, 4096);
-        if (ImGui.Button("Open / import"))
-        {
-            var path = inputPath;
-            Run(() => { var imported = SceneCodec.Import(ProjectFiles.Read(path)); GuardReplace(() => { ReplaceScene(imported); knownHashes[Path.GetFullPath(path)] = ProjectFiles.Hash(path); status = $"Imported {scene.Objects.Count} objects."; }); });
-        }
+        ImGui.TextColored(ImGui.ColorConvertFloat4ToU32(new(.4f, .85f, .95f, 1)), "SAVE ONCE, EXPORT BOTH");
+        ImGui.TextWrapped("Keep the Sceneweaver project for continued editing. Choose where each plugin's copy should be saved below.");
+        if (inputPath.Length > 0) ImGui.TextWrapped("Opened: " + inputPath);
+        ImGui.BeginDisabled(filePicker != null);
+        if (ImGui.Button("Open Stagehand autosave...")) Pick("Stagehand autosave", false, "", ImportFile);
+        ImGui.EndDisabled();
         ImGui.Separator();
-        if (ImGui.InputText("Canonical project", ref projectPath, 4096)) pending = null;
-        if (ImGui.InputText("Intoner layout", ref intonerPath, 4096)) pending = null;
-        if (ImGui.InputText("Stagehand definition", ref stagehandPath, 4096)) pending = null;
+        Destination("Sceneweaver", projectPath, value => projectPath = value);
+        Destination("Intoner", intonerPath, value => intonerPath = value);
+        Destination("Stagehand", stagehandPath, value => stagehandPath = value);
         if (ImGui.Button("Review dual-save")) Run(() =>
         {
             pending = ProjectFiles.PlanDualSave(scene, projectPath, intonerPath, stagehandPath);
@@ -244,7 +227,7 @@ public sealed class Plugin : IDalamudPlugin
             ProjectFiles.Commit(new SavePlan([new(full, ProjectJson.Save(scene), ProjectFiles.Hash(full))], []));
             knownHashes[full] = ProjectFiles.Hash(full); dirty = false; status = "Canonical project saved, including all preserved source fields.";
         });
-        ImGui.TextWrapped("Dual-save writes all three files. Keep the canonical project for future editing; plugin exports alone cannot retain fields that their formats do not support. Existing files receive dated-by-ID recovery backups.");
+        ImGui.TextWrapped("Both exports are reviewed before writing. Unsupported data stays in your Sceneweaver project, and existing files receive recovery backups.");
         if (pending != null)
         {
             ImGui.BeginChild("report", new(0, 240), true);

@@ -2,6 +2,8 @@ param([switch]$SkipTests)
 $ErrorActionPreference = 'Stop'
 Push-Location $PSScriptRoot
 try {
+    [xml]$project = Get-Content src/CrossFormat.Plugin/CrossFormat.Plugin.csproj
+    $version = [string]$project.Project.PropertyGroup.Version
     if (-not $SkipTests) {
         dotnet run --project tests/CrossFormat.Tests/CrossFormat.Tests.csproj -c Release
         if ($LASTEXITCODE -ne 0) { throw 'Conversion tests failed.' }
@@ -13,6 +15,6 @@ try {
     New-Item -ItemType Directory -Force dist | Out-Null
     $bundleFiles = @(Get-ChildItem src/CrossFormat.Plugin/bin/Release -File | Select-Object -ExpandProperty FullName)
     $bundleFiles += @('LICENSE.md', 'THIRD_PARTY.md', 'README.md')
-    Compress-Archive -Path $bundleFiles -DestinationPath dist/Sceneweaver-0.1.0.zip -Force
-    Write-Host 'Built dist/Sceneweaver-0.1.0.zip'
+    Compress-Archive -Path $bundleFiles -DestinationPath "dist/Sceneweaver-$version.zip" -Force
+    Write-Host "Built dist/Sceneweaver-$version.zip"
 } finally { Pop-Location }
