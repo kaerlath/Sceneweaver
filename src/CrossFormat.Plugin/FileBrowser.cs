@@ -52,13 +52,24 @@ public sealed partial class Plugin
 
     private void ImportFile(string path)
     {
-        var imported = SceneCodec.Import(ProjectFiles.Read(path));
-        var hash = ProjectFiles.Hash(path);
+        SceneProject imported;
+        string hash;
+        try
+        {
+            imported = SceneCodec.Import(ProjectFiles.Read(path));
+            hash = ProjectFiles.Hash(path);
+        }
+        catch (Exception e)
+        {
+            throw new InvalidDataException($"Could not open {Path.GetFileName(path)}. Your current scene has been kept.\n\n{e.Message}", e);
+        }
+        if (dirty) status = $"Ready to open {Path.GetFileName(path)} ({imported.Objects.Count} objects). Choose whether to discard your unsaved changes below.";
         GuardReplace(() =>
         {
             ReplaceScene(imported); inputPath = path; knownHashes[Path.GetFullPath(path)] = hash;
             if (Path.GetFileName(path).EndsWith(".cross.json", StringComparison.OrdinalIgnoreCase)) projectPath = path;
             status = $"Opened {Path.GetFileName(path)} — {scene.Objects.Count} objects.";
+            log.Information("Opened scene {FileName}: {ObjectCount} objects", Path.GetFileName(path), scene.Objects.Count);
         });
     }
 

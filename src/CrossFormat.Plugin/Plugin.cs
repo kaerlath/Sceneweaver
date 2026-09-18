@@ -27,6 +27,9 @@ public sealed partial class Plugin : IDalamudPlugin
     private SavePlan? pending;
     private Action? pendingDestructive;
     private int assetPage;
+    private bool focusScene;
+    private string? operationError;
+    private bool showOperationError;
 
     public Plugin(IDalamudPluginInterface pluginInterface, ICommandManager commandManager, IDataManager data, ITextureProvider textures, IClientState clientState, IObjectTable objectTable, IFramework framework, IPluginLog log)
     {
@@ -51,7 +54,16 @@ public sealed partial class Plugin : IDalamudPlugin
         clientState.TerritoryChanged += OnTerritoryChanged;
     }
     private void Open() => open = true;
-    private void Run(Action action) { try { action(); } catch (Exception e) { status = e.Message; } }
+    private void Run(Action action)
+    {
+        try { action(); }
+        catch (Exception e)
+        {
+            status = operationError = e.Message;
+            showOperationError = true;
+            log.Error(e, "Sceneweaver operation failed");
+        }
+    }
     private void Edit(Action action)
     {
         undo.Push(JsonSerializer.Serialize(scene, ProjectJson.Options));
@@ -66,7 +78,8 @@ public sealed partial class Plugin : IDalamudPlugin
     private void ReplaceScene(SceneProject value)
     {
         live.Stop("Live display hidden while switching projects.");
-        scene = value; selected = Guid.Empty; undo.Clear(); redo.Clear(); pending = null; dirty = false;
+        scene = value; selected = scene.Objects.FirstOrDefault()?.Id ?? Guid.Empty;
+        undo.Clear(); redo.Clear(); pending = null; dirty = false; focusScene = true;
     }
     private void GuardReplace(Action action) { if (dirty) pendingDestructive = action; else action(); }
 
@@ -91,6 +104,16 @@ public sealed partial class Plugin : IDalamudPlugin
             ImGui.TextColored(ImGui.ColorConvertFloat4ToU32(new(.4f, .85f, .95f, 1)), "SCENEWEAVER");
             ImGui.SameLine(); ImGui.TextDisabled("One scene. Multiple stages.");
             DrawImportButtons();
+            ImGui.TextWrapped(status);
+            if (showOperationError) { ImGui.OpenPopup("Sceneweaver could not complete the action"); showOperationError = false; }
+            if (ImGui.BeginPopupModal("Sceneweaver could not complete the action", ImGuiWindowFlags.AlwaysAutoResize))
+            {
+                ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + 560);
+                ImGui.TextUnformatted(operationError ?? "Unknown error.");
+                ImGui.PopTextWrapPos();
+                if (ImGui.Button("Close")) ImGui.CloseCurrentPopup();
+                ImGui.EndPopup();
+            }
             if (ImGui.Button("New")) GuardReplace(() => ReplaceScene(new()));
             ImGui.SameLine();
             ImGui.BeginDisabled(undo.Count == 0);
@@ -110,12 +133,12 @@ public sealed partial class Plugin : IDalamudPlugin
             if (ImGui.BeginTabBar("workspace"))
             {
                 if (ImGui.BeginTabItem("Discover assets")) { DrawAssets(); ImGui.EndTabItem(); }
-                if (ImGui.BeginTabItem("Scene")) { DrawScene(); ImGui.EndTabItem(); }
+                if (ImGui.BeginTabItem("Scene", focusScene ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None))
+                { focusScene = false; DrawScene(); ImGui.EndTabItem(); }
                 if (ImGui.BeginTabItem("Mods")) { DrawMods(); ImGui.EndTabItem(); }
                 if (ImGui.BeginTabItem("Save & export")) { DrawFiles(); ImGui.EndTabItem(); }
                 ImGui.EndTabBar();
             }
-            ImGui.Separator(); ImGui.TextWrapped(status);
         }
         ImGui.End();
         ImGui.PopStyleColor(5); ImGui.PopStyleVar(4);
