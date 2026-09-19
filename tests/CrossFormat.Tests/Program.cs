@@ -73,6 +73,53 @@ Test("Intoner folder colors, locked state and playback data preserved", () =>
     Assert(output["Folders"]![0]!["Color"]!.GetValue<string>() == "#FFAA00"); Assert(output["Objects"]![1]!["Locked"]!.GetValue<bool>()); Assert(output["Objects"]![1]!["Object"]!["Model"]!["Vfx"]!["Speed"]!.GetValue<float>() == 2.3f);
 });
 Test("Version 1 folders upgrade to version 2", () => { var r = JsonNode.Parse(Intoner(Fixture()))!; r["FormatVersion"] = 1; r["Folders"] = new JsonArray("Folder"); r["FolderColors"] = new JsonObject { ["Folder"]="#123456" }; var s = SceneCodec.Import(r.ToJsonString()); var output = JsonNode.Parse(Intoner(s))!; Assert(output["Folders"]![0]!["Path"]!.GetValue<string>() == "Folder"); Assert(output["Folders"]![0]!["Color"]!.GetValue<string>() == "#123456"); });
+Test("VFX playback edits survive canonical and Intoner saves", () =>
+{
+    var scene = SceneCodec.Import(Intoner(Fixture()));
+    var effect = scene.Objects.Single(o => o.Kind == AssetKind.Vfx);
+    var settings = new VfxPlayback(2.5f, true, 1.75f, true, true, 12);
+    effect.Playback = settings;
+    var saved = ProjectJson.Load(ProjectJson.Save(scene));
+    Assert(VfxPlayback.For(saved.Objects.Single(o => o.Kind == AssetKind.Vfx)) == settings);
+    var imported = SceneCodec.Import(Intoner(saved));
+    Assert(VfxPlayback.For(imported.Objects.Single(o => o.Kind == AssetKind.Vfx)) == settings);
+    effect.Playback = new(); // Explicit defaults must override the original source.
+    Assert(VfxPlayback.For(SceneCodec.Import(Intoner(scene)).Objects.Single(o => o.Kind == AssetKind.Vfx)) == new VfxPlayback());
+});
+Test("Older canonical projects recover VFX playback without changing preserved source", () =>
+{
+    var root = JsonNode.Parse(Intoner(Fixture()))!;
+    var vfx = root["Objects"]![1]!["Object"]!["Model"]!["Vfx"]!;
+    vfx["Speed"] = 3f; vfx["Paused"] = true; vfx["FadeInSeconds"] = 2f;
+    vfx["ReplayOnTransform"] = true; vfx["Loop"] = true; vfx["LoopIntervalSeconds"] = 9;
+    var canonical = JsonNode.Parse(ProjectJson.Save(SceneCodec.Import(root.ToJsonString())))!;
+    foreach (var item in canonical["Objects"]!.AsArray()) item!.AsObject().Remove("Playback");
+    var old = ProjectJson.Load(canonical.ToJsonString());
+    var effect = old.Objects.Single(o => o.Kind == AssetKind.Vfx);
+    effect.IntonerSource["Object"]!["Model"]!["Vfx"]!["FuturePlayback"] = "preserve";
+    Assert(VfxPlayback.For(effect) == new VfxPlayback(3, true, 2, true, true, 9));
+    effect.Playback = new();
+    Assert(VfxPlayback.For(SceneCodec.Import(Intoner(old)).Objects.Single(o => o.Kind == AssetKind.Vfx)) == new VfxPlayback());
+    Assert(ProjectJson.Save(old).Contains("FuturePlayback"));
+});
+Test("Stagehand VFX export keeps effects and reports unsupported playback in live display", () =>
+{
+    var scene = Fixture();
+    var effect = scene.Objects.Single(o => o.Kind == AssetKind.Vfx);
+    Assert(VfxPlayback.For(effect) == new VfxPlayback());
+    effect.Playback = new(0, true, 60, true, true, 1);
+    var result = SceneCodec.Export(scene, SceneFormat.Stagehand);
+    Assert(result.Document["Objects"]!["vfx-key"]!["VfxGamePath"]!.GetValue<string>() == effect.AssetPath);
+    Assert(result.Issues.Any(i => i.ObjectName == effect.Name && !i.Omitted && i.Message.Contains("playback")));
+    Assert(LiveScene.Build(scene).Notes.Any(n => n.Contains("playback")));
+    Assert(VfxPlayback.For(SceneCodec.Import(Intoner(scene)).Objects.Single(o => o.Kind == AssetKind.Vfx)) == effect.Playback);
+});
+Test("Non-finite VFX playback is rejected before saving", () =>
+{
+    var scene = Fixture(); var effect = scene.Objects.Single(o => o.Kind == AssetKind.Vfx);
+    effect.Playback = new(float.NaN); Throws(() => ProjectJson.Save(scene));
+    effect.Playback = new(FadeInSeconds: float.PositiveInfinity); Throws(() => Stage(scene));
+});
 Test("Intoner furniture and material metadata survive canonical and native saves", () =>
 {
     var r = JsonNode.Parse(Intoner(Fixture()))!;

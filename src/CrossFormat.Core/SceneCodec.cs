@@ -69,7 +69,8 @@ public static class SceneCodec
                     o.AssetPath = b.ModelPath; o.Opacity = b.Transparency; o.Color = V(b.DyeColor); break;
                 case AssetKind.Vfx:
                     var v = w.Model.Vfx ?? throw new InvalidDataException("Missing Vfx payload.");
-                    o.AssetPath = v.VfxPath; o.Color = V(v.Color); break;
+                    o.AssetPath = v.VfxPath; o.Color = V(v.Color);
+                    o.Playback = new(v.Speed, v.Paused, v.FadeInSeconds, v.ReplayOnTransform, v.Loop, v.LoopIntervalSeconds); break;
                 case AssetKind.Furniture:
                     var f = w.Model.Furniture ?? throw new InvalidDataException("Missing Furniture payload.");
                     o.AssetPath = f.SharedGroupPath; o.Opacity = f.Transparency; o.Color = V(f.Color.CustomColor); break;
@@ -130,6 +131,8 @@ public static class SceneCodec
         foreach (var o in s.Objects)
         {
             var modId = ModResources.PackId(o);
+            if (o.Kind == AssetKind.Vfx && VfxPlayback.For(o) != new VfxPlayback())
+                issues.Add(new(o.Name, "VFX speed, pause, fade-in, replay and looping settings apply only in Intoner. Stagehand export and live display use Stagehand's playback; settings remain in the Sceneweaver project."));
             if (modId.Length > 0 && !ModResources.Packs(s).ContainsKey(modId)) throw new InvalidDataException($"{o.Name}: the referenced modpack is missing. Reimport it or remove the binding before Stagehand export.");
             if (o.Kind is AssetKind.Furniture or AssetKind.Unknown) { issues.Add(new(o.Name, "No supported Stagehand object type; retained in canonical project.", true)); continue; }
             if (Path.IsPathRooted(o.AssetPath)) { issues.Add(new(o.Name, "A disk asset needs a Stagehand modpack with material/texture bindings; omitted rather than writing an invalid game path.", true)); continue; }
@@ -193,7 +196,10 @@ public static class SceneCodec
             switch (o.Kind)
             {
                 case AssetKind.BgObject: model = model with { BgObject = new(o.AssetPath, o.Opacity, I(o.Color), model.BgObject?.IsCoveredFromRain ?? false) }; break;
-                case AssetKind.Vfx: model = model with { Vfx = (model.Vfx ?? new VfxModelData(o.AssetPath, I(o.Color))) with { VfxPath = o.AssetPath, Color = I(o.Color) } }; break;
+                case AssetKind.Vfx:
+                    var playback = VfxPlayback.For(o);
+                    model = model with { Vfx = new VfxModelData(o.AssetPath, I(o.Color), playback.Speed, playback.Paused,
+                        playback.FadeInSeconds, playback.ReplayOnTransform, playback.Loop, playback.LoopIntervalSeconds) }; break;
                 case AssetKind.Furniture:
                     if (model.Furniture == null) { issues.Add(new(o.Name, "Furniture needs an imported Intoner shared-group payload.", true)); continue; }
                     model = model with { Furniture = model.Furniture with { SharedGroupPath = o.AssetPath, Transparency = o.Opacity, Color = model.Furniture.Color with { CustomColor = I(o.Color) } } }; break;

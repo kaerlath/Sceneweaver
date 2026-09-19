@@ -43,10 +43,20 @@ public sealed class SceneObject
     public float Opacity { get; set; } = 1;
     public Vector4 Color { get; set; } = Vector4.One;
     public JsonObject Light { get; set; } = new();
+    public VfxPlayback? Playback { get; set; }
     public JsonObject IntonerSource { get; set; } = new();
     public JsonObject StagehandSource { get; set; } = new();
     public uint IconId { get; set; }
     public string PreviewImagePath { get; set; } = "";
+}
+
+public sealed record VfxPlayback(float Speed = 1, bool Paused = false, float FadeInSeconds = 0,
+    bool ReplayOnTransform = false, bool Loop = false, int LoopIntervalSeconds = 5)
+{
+    // Older canonical projects keep playback only in the preserved Intoner payload.
+    public static VfxPlayback For(SceneObject o) => o.Playback
+        ?? o.IntonerSource["Object"]?["Model"]?["Vfx"]?.Deserialize<VfxPlayback>(ProjectJson.Options)
+        ?? new();
 }
 
 public sealed record ConversionIssue(string ObjectName, string Message, bool Omitted = false);
@@ -84,6 +94,12 @@ public static class ProjectJson
             if (o.Id == Guid.Empty || !ids.Add(o.Id)) throw new InvalidDataException("Duplicate or empty object ID.");
             if (!stageIds.Add(string.IsNullOrEmpty(o.StagehandId) ? o.Id.ToString() : o.StagehandId)) throw new InvalidDataException("Duplicate Stagehand object key.");
             Check(o.Position); Check(o.RotationDegrees); Check(o.Scale);
+            if (o.Kind == AssetKind.Vfx)
+            {
+                var playback = VfxPlayback.For(o);
+                if (!float.IsFinite(playback.Speed) || !float.IsFinite(playback.FadeInSeconds))
+                    throw new InvalidDataException($"{o.Name}: VFX playback values must be finite.");
+            }
             if (!float.IsFinite(o.Opacity) || !float.IsFinite(o.Color.X) || !float.IsFinite(o.Color.Y) || !float.IsFinite(o.Color.Z) || !float.IsFinite(o.Color.W)) throw new InvalidDataException("Non-finite color or opacity.");
         }
     }

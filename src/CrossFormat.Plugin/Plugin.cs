@@ -205,6 +205,7 @@ public sealed partial class Plugin : IDalamudPlugin
         if (ImGui.DragFloat3("Scale", ref scale, .01f)) Edit(() => o.Scale = scale);
         if (o.Kind is AssetKind.BgObject or AssetKind.Vfx)
             if (ImGui.ColorEdit4("Color", ref color)) Edit(() => o.Color = color);
+        if (o.Kind == AssetKind.Vfx) DrawVfxPlayback(o);
         if (o.Kind is AssetKind.BgObject or AssetKind.Furniture)
             if (ImGui.SliderFloat("Opacity", ref opacity, 0, 1)) Edit(() => o.Opacity = opacity);
         if (ImGui.InputText("Preview PNG/JPG", ref image, 4096)) Edit(() => o.PreviewImagePath = image);
@@ -226,6 +227,26 @@ public sealed partial class Plugin : IDalamudPlugin
         });
         ImGui.EndDisabled();
         if (ModResources.PackId(o).Length > 0) ImGui.TextDisabled("Mod assets are kept in this project's Mods library.");
+    }
+
+    private void DrawVfxPlayback(SceneObject o)
+    {
+        if (!ImGui.CollapsingHeader("VFX playback (Intoner)", ImGuiTreeNodeFlags.DefaultOpen)) return;
+        ImGui.TextWrapped("Saved in your project and Intoner exports. Stagehand exports and in-game display do not apply these playback settings.");
+        var playback = VfxPlayback.For(o);
+        var speed = playback.Speed; var paused = playback.Paused; var fade = playback.FadeInSeconds;
+        var replay = playback.ReplayOnTransform; var loop = playback.Loop; var interval = playback.LoopIntervalSeconds;
+        bool changed = false;
+        if (ImGui.SliderFloat("Playback speed", ref speed, 0, 4, "%.2fx")) { playback = playback with { Speed = Math.Clamp(speed, 0, 4) }; changed = true; }
+        if (ImGui.Checkbox("Paused", ref paused)) { playback = playback with { Paused = paused }; changed = true; }
+        if (ImGui.SliderFloat("Fade-in (seconds)", ref fade, 0, 60, "%.2f")) { playback = playback with { FadeInSeconds = Math.Clamp(fade, 0, 60) }; changed = true; }
+        if (ImGui.Checkbox("Replay when moved, rotated or scaled", ref replay)) { playback = playback with { ReplayOnTransform = replay }; changed = true; }
+        if (ImGui.Checkbox("Loop / replay on a timer", ref loop)) { playback = playback with { Loop = loop }; changed = true; }
+        ImGui.BeginDisabled(!loop);
+        if (ImGui.SliderInt("Replay interval (seconds)", ref interval, 1, 60)) { playback = playback with { LoopIntervalSeconds = Math.Clamp(interval, 1, 60) }; changed = true; }
+        ImGui.EndDisabled();
+        if (ImGui.Button("Reset playback")) { playback = new(); changed = true; }
+        if (changed) Edit(() => o.Playback = playback);
     }
 
     private void DrawLight(SceneObject o)

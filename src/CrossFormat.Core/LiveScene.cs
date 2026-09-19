@@ -32,7 +32,7 @@ public static class LiveScene
             StageTranslation = source.StageTranslation, StageRotationDegrees = source.StageRotationDegrees, StageUniformScale = source.StageUniformScale,
         };
         var result = SceneCodec.Export(live, SceneFormat.Stagehand);
-        notes.AddRange(result.Issues.Where(i => i.Omitted).Select(i => i.ObjectName + ": " + i.Message));
+        notes.AddRange(result.Issues.Select(i => i.ObjectName + ": " + i.Message));
         int count = result.Document["Objects"]!.AsObject().Count(p => p.Value?["IsDisabled"]?.GetValue<bool>() != true);
         return new(result.Json, source.StageTranslation, TransformMath.Rotation(source.StageRotationDegrees), source.StageUniformScale, count, notes.ToArray());
     }
