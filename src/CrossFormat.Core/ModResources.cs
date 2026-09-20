@@ -27,6 +27,18 @@ public static class ModResources
         return id;
     }
     public static string PackId(SceneObject asset) => asset.StagehandSource["ModpackId"]?.GetValue<string>() ?? "";
+    public static void Replace(SceneProject scene, string id, JsonObject pack)
+    {
+        var packs = (JsonObject)Packs(scene).DeepClone();
+        var previous = packs[id] as JsonObject ?? throw new InvalidDataException("The mod to update is no longer in this project.");
+        _ = pack.Deserialize<EmbeddedModpackDefinition>(StageDefinition.StandardSerializerOptions) ?? throw new InvalidDataException("Invalid modpack.");
+        var updated = (JsonObject)previous.DeepClone();
+        foreach (var field in pack) updated[field.Key] = field.Value?.DeepClone();
+        updated["DisplayName"] = previous["DisplayName"]?.DeepClone();
+        packs[id] = updated;
+        // Replacing the container also invalidates preview caches. Object bindings retain their IDs.
+        scene.StagehandRoot["EmbeddedModpacks"] = packs;
+    }
     public static SceneObject CreateObject(string packId, string gamePath) => new()
     {
         Name = Path.GetFileNameWithoutExtension(gamePath), AssetPath = gamePath,

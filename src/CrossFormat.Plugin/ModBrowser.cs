@@ -20,7 +20,8 @@ public sealed partial class Plugin
         if (modOpenTask is { IsCompleted: true })
         {
             var done = modOpenTask; modOpenTask = null;
-            Run(() => { modImport = done.GetAwaiter().GetResult(); modSelections = modImport.Groups.Select(g => g.Defaults.ToArray()).ToList(); modBuilt = null; });
+            Run(() => { modImport = done.GetAwaiter().GetResult(); modSelections = modImport.Groups.Select(g => g.Defaults.ToArray()).ToList(); modBuilt = null;
+                if (restoreModChoices != null) modSelections = modImport.SelectByName(restoreModChoices); });
         }
         if (modBuildTask is { IsCompleted: true })
         {
@@ -30,13 +31,16 @@ public sealed partial class Plugin
         ImGui.TextColored(ImGui.ColorConvertFloat4ToU32(new(.4f, .85f, .95f, 1)), "MOD LIBRARY");
         ImGui.TextWrapped("Import a Penumbra .pmp or choose meta.json in an installed mod folder. Its selected files are embedded in the project and Stagehand export.");
         ImGui.BeginDisabled(filePicker != null || modOpenTask != null || modBuildTask != null);
-        if (ImGui.Button("Import mod...")) Pick("Mod", false, "", path => { modImport = null; modBuilt = null; modOpenTask = Task.Run(() => ModImport.Open(path)); });
+        if (ImGui.Button("Import mod...")) Pick("Mod", false, "", path => BeginModImport(path));
         ImGui.EndDisabled();
+        DrawInstalledMods();
         if (modOpenTask != null || modBuildTask != null) { ImGui.SameLine(); ImGui.TextDisabled("Reading mod files..."); }
         if (modImport != null)
         {
             ImGui.Separator(); ImGui.TextUnformatted(modImport.Name);
             ImGui.BeginDisabled(modBuildTask != null);
+            DrawCollectionSettings();
+            if (updateModId.Length > 0) ImGui.TextWrapped("Updating this project's mod. Matching resources will be replaced and removed resources dropped; object links remain unchanged. Review your option choices.");
             if (ImGui.BeginChild("mod-options", new(0, Math.Min(180, 50 + modImport.Groups.Count * 45)), true))
             {
                 for (int g = 0; g < modImport.Groups.Count; g++)
@@ -70,10 +74,18 @@ public sealed partial class Plugin
             if (modBuilt != null)
             {
                 ImGui.TextUnformatted($"{modBuilt.Resources} resources, {modBuilt.Placeable} models / effects / sounds. Materials and textures are included.");
-                if (ImGui.Button("Add mod to this project")) Run(() =>
+                if (updateModId.Length > 0 && ModResources.Packs(scene)[updateModId]?["ModdedResources"] is JsonObject oldResources)
+                {
+                    var newResources = modBuilt.Pack["ModdedResources"]!.AsObject();
+                    var removed = oldResources.Select(p => p.Key).Where(k => !newResources.ContainsKey(k)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    ImGui.TextWrapped($"{removed.Count} previous resource paths will be removed; {scene.Objects.Count(o => ModResources.PackId(o) == updateModId && removed.Contains(o.AssetPath))} scene objects use those paths and may revert to the game asset.");
+                }
+                if (ImGui.Button(updateModId.Length == 0 ? "Add mod to this project" : "Apply reviewed mod update")) Run(() =>
                 {
                     var built = modBuilt;
-                    Edit(() => selectedModId = ModResources.Attach(scene, built.Pack));
+                    if (updateModId.Length > 0 && !ModResources.Packs(scene).ContainsKey(updateModId)) throw new InvalidOperationException("The target mod no longer exists. Start the import again.");
+                    Edit(() => { if (updateModId.Length == 0) selectedModId = ModResources.Attach(scene, built.Pack);
+                        else { ModResources.Replace(scene, updateModId, built.Pack); selectedModId = updateModId; } });
                     modImport = null; modBuilt = null; modPreview = null;
                     status = "Mod added. Select a resource below to preview it or add it to your scene.";
                 });
@@ -90,6 +102,18 @@ public sealed partial class Plugin
             foreach (var p in packs) if (ImGui.Selectable(PackName(p.Key) + "##" + p.Key, selectedModId == p.Key)) { selectedModId = p.Key; modPreview = null; }
             ImGui.EndCombo();
         }
+        var sourceDirectory = packs[selectedModId]?["PenumbraSourceModDirectory"]?.GetValue<string>() ?? "";
+        ImGui.TextWrapped($"Source: {sourceDirectory}  Version: {packs[selectedModId]?["PenumbraSourceModVersion"]?.GetValue<string>() ?? "unknown"}");
+        ImGui.BeginDisabled(ModBusy || sourceDirectory.Length == 0);
+        if (ImGui.Button("Update from installed Penumbra mod")) Run(() => BeginModImport(InstalledModPath(sourceDirectory), sourceDirectory, selectedModId));
+        ImGui.EndDisabled();
+        ImGui.BeginDisabled(ModBusy);
+        if (ImGui.Button("Update from package / folder..."))
+        {
+            var id = selectedModId;
+            Pick("Mod", false, "", path => BeginModImport(path, updateId: id));
+        }
+        ImGui.EndDisabled();
         var selectedObject = scene.Objects.FirstOrDefault(o => o.Id == selected);
         ImGui.BeginDisabled(selectedObject == null || selectedObject.Locked);
         if (ImGui.Button("Apply mod to selected scene object")) Edit(() => selectedObject!.StagehandSource["ModpackId"] = selectedModId);

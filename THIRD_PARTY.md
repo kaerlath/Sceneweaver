@@ -9,3 +9,13 @@ This project is distributed under AGPL-3.0-or-later; see LICENSE.md.
 - Dalamud, Lumina and ImGui bindings are referenced from the user's Dalamud installation and are not included in the plugin bundle. MessagePack.Annotations is restored via NuGet; its NuGet package supplies its licensing metadata.
 
 When distributing a binary, provide the corresponding complete source, including these contract files and build instructions, under the applicable AGPL terms. No game assets are bundled in the plugin.
+
+## Penumbra.Api
+
+Penumbra.Api 5.19.1, by Ottermandias, is distributed with the plugin under the MIT license. Source: https://github.com/Ottermandias/Penumbra.Api at 2343b3c12997160ffbd1f283c5e076059a8e4377. Copyright © 2025 Ottermandias.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

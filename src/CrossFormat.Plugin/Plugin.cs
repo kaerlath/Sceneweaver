@@ -78,6 +78,8 @@ public sealed partial class Plugin : IDalamudPlugin
     private void ReplaceScene(SceneProject value)
     {
         live.Stop("Live display hidden while switching projects.");
+        modOpenTask = null; modBuildTask = null; modImport = null; modBuilt = null; modPreview = null;
+        updateModId = ""; restoreModChoices = null;
         scene = value; selected = scene.Objects.FirstOrDefault()?.Id ?? Guid.Empty;
         undo.Clear(); redo.Clear(); pending = null; dirty = false; focusScene = true;
     }

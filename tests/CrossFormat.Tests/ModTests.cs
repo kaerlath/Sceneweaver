@@ -79,6 +79,50 @@ internal static class ModTests
                 Reject(() => ModImport.Open(path));
             }
         });
+        test("Combining groups select exactly the container for the selected option bits", () =>
+        {
+            Write("group_003.json", """{"Name":"Combined","Type":"Combining","Priority":10,"DefaultSettings":3,"Options":[{"Name":"Left"},{"Name":"Right"}],"Containers":[{"FileSwaps":{"bg/combined.mdl":"bg/none.mdl"}},{"FileSwaps":{"bg/combined.mdl":"bg/left.mdl"}},{"FileSwaps":{"bg/combined.mdl":"bg/right.mdl"}},{"FileSwaps":{"bg/combined.mdl":"bg/both.mdl"}}]}""");
+            var mod = ModImport.Open(metadata);
+            foreach (var (bits, expected) in new[] { (0, "none"), (1, "left"), (2, "right"), (3, "both") })
+            {
+                var choices = mod.Groups.Select(g => g.Defaults.ToArray()).ToArray();
+                choices[2] = Enumerable.Range(0, 2).Where(i => (bits & (1 << i)) != 0).ToArray();
+                var pack = mod.Build(choices).Pack;
+                Assert(pack["ModdedResources"]!["bg/combined.mdl"]!["SourceGamePath"]!.GetValue<string>() == $"bg/{expected}.mdl");
+            }
+            var named = mod.SelectByName(new Dictionary<string, string[]> { ["Combined"] = ["Right"] });
+            Assert(named[2].SequenceEqual(new[] { 1 }));
+            Reject(() => mod.SelectByName(new Dictionary<string, string[]> { ["Combined"] = ["Removed option"] }));
+            Reject(() => mod.SelectByName(new Dictionary<string, string[]> { ["Variant"] = ["A", "B"] }));
+            var saved = mod.Build(named).Pack["SceneweaverImport"]!["NamedSelections"]!;
+            Assert(saved["Combined"]![0]!.GetValue<string>() == "Right");
+            File.Delete(Path.Combine(root, "group_003.json"));
+        });
+        test("Malformed Combining containers fail explicitly", () =>
+        {
+            Write("group_003.json", """{"Name":"Bad","Type":"Combining","Options":[{"Name":"A"}],"Containers":[{}]}""");
+            Reject(() => ModImport.Open(metadata));
+            File.Delete(Path.Combine(root, "group_003.json"));
+        });
+        test("Updating a mod keeps object bindings and unknown fields but drops removed resources", () =>
+        {
+            var scene = new SceneProject(); var original = (JsonObject)imported!.Pack.DeepClone(); original["FutureField"] = "keep";
+            var id = ModResources.Attach(scene, original); scene.Objects.Add(ModResources.CreateObject(id, "bg/test/model/a.mdl"));
+            var before = ProjectJson.Save(scene); var oldPacks = ModResources.Packs(scene);
+            var replacement = (JsonObject)original.DeepClone(); replacement.Remove("FutureField");
+            replacement["ModdedResources"]!.AsObject().Remove("bg/test/model/a.mdl");
+            replacement["PenumbraSourceModVersion"] = "2"; replacement["DisplayName"] = "New name";
+            ModResources.Replace(scene, id, replacement);
+            Assert(!ReferenceEquals(oldPacks, ModResources.Packs(scene)));
+            Assert(ModResources.PackId(scene.Objects[0]) == id);
+            Assert(ModResources.Packs(scene)[id]!["FutureField"]!.GetValue<string>() == "keep");
+            Assert(ModResources.Packs(scene)[id]!["DisplayName"]!.GetValue<string>() == "Test mod");
+            Assert(!ModResources.Packs(scene)[id]!["ModdedResources"]!.AsObject().ContainsKey("bg/test/model/a.mdl"));
+            Assert(ModResources.Packs(ProjectJson.Load(before))[id]!["ModdedResources"]!.AsObject().ContainsKey("bg/test/model/a.mdl"));
+            var exported = SceneCodec.Export(scene, SceneFormat.Stagehand).Document.Deserialize<StageDefinition>(StageDefinition.StandardSerializerOptions)!;
+            Assert(exported.Objects.Values.Single().ModpackId == id && exported.EmbeddedModpacks[id].PenumbraSourceModVersion == "2");
+            Reject(() => ModResources.Replace(scene, "missing", replacement));
+        });
         test("Installed mod traversal, missing resources and metadata edits fail explicitly", () =>
         {
             foreach (var file in new[] { "../outside", "files/missing.mdl" })

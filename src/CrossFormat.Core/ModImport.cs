@@ -34,13 +34,15 @@ public sealed class ModImport
         foreach (var name in files.Names.Where(n => n.StartsWith("group_", StringComparison.OrdinalIgnoreCase) && !n.Contains('/') && n.EndsWith(".json", StringComparison.OrdinalIgnoreCase)).Order(StringComparer.OrdinalIgnoreCase))
         {
             var raw = Read(name); string type = raw["Type"]?.GetValue<string>() ?? "";
-            if (type is not ("Single" or "Multi")) throw new InvalidDataException($"Option group {name} uses {type}; only Single and Multi groups are supported. Export a simple Penumbra package first.");
+            if (type is not ("Single" or "Multi" or "Combining")) throw new InvalidDataException($"Option group {name} uses {type}. IMC and other metadata options cannot be represented by Stagehand resource packs; import a files-only version of this mod.");
             var options = raw["Options"]?.AsArray() ?? throw new InvalidDataException($"Missing options in {name}.");
             if (options.Count > 64) throw new InvalidDataException("Mod groups with more than 64 options are not supported.");
             ulong settings = raw["DefaultSettings"]?.GetValue<ulong>() ?? 0;
             if (type == "Single" && options.Count > 0 && settings >= (ulong)options.Count) throw new InvalidDataException("Mod group contains an invalid default option.");
             int[] selected = type == "Single" ? (options.Count == 0 ? [] : [(int)Math.Min(settings, (ulong)options.Count - 1)]) : Enumerable.Range(0, options.Count).Where(i => (settings & (1UL << i)) != 0).ToArray();
-            result.Groups.Add(new(raw["Name"]?.GetValue<string>() ?? name, type == "Multi", options.Select(o => o?["Name"]?.GetValue<string>() ?? "Unnamed option").ToArray(), selected, raw));
+            if (type == "Combining" && (options.Count > 20 || raw["Containers"] is not JsonArray containers || containers.Count != (1 << options.Count)))
+                throw new InvalidDataException($"Combining group {name} must contain one resource container for every option combination (up to 20 options).");
+            result.Groups.Add(new(raw["Name"]?.GetValue<string>() ?? name, type != "Single", options.Select(o => o?["Name"]?.GetValue<string>() ?? "Unnamed option").ToArray(), selected, raw));
         }
         // Penumbra group priority determines which group wins overlapping replacements.
         var ordered = result.Groups.OrderBy(g => g.Raw["Priority"]?.GetValue<int>() ?? 0).ToArray();
@@ -64,7 +66,12 @@ public sealed class ModImport
         {
             var group = Groups[g]; var options = group.Raw["Options"]!.AsArray();
             if ((!group.Multiple && selections[g].Length != 1 && options.Count > 0) || selections[g].Distinct().Count() != selections[g].Length || selections[g].Any(i => i < 0 || i >= options.Count)) throw new InvalidDataException("Invalid mod option selection.");
-            foreach (int i in selections[g].OrderBy(i => options[i]?["Priority"]?.GetValue<int>() ?? i)) Apply(options[i]!.AsObject());
+            if (group.Raw["Type"]?.GetValue<string>() == "Combining")
+            {
+                int index = selections[g].Aggregate(0, (bits, i) => bits | (1 << i));
+                Apply(group.Raw["Containers"]![index]!.AsObject());
+            }
+            else foreach (int i in selections[g].OrderBy(i => options[i]?["Priority"]?.GetValue<int>() ?? i)) Apply(options[i]!.AsObject());
         }
         if (files.Count + swaps.Count > 8192) throw new InvalidDataException("Mod exceeds the 8192-resource limit.");
         if (files.Count + swaps.Count == 0) throw new InvalidDataException("The selected options contain no file replacements or game-file swaps.");
@@ -79,8 +86,23 @@ public sealed class ModImport
         foreach (var f in swaps) pack.ModdedResources[f.Key] = new GameModResourceDefinition { SourceGamePath = f.Value };
         var rawPack = JsonSerializer.SerializeToNode(pack, StageDefinition.StandardSerializerOptions)!.AsObject();
         // Source option definitions are kept canonically for inspection, not executed or installed.
-        rawPack["SceneweaverImport"] = new JsonObject { ["Metadata"] = metadata.DeepClone(), ["Defaults"] = defaults.DeepClone(), ["Groups"] = new JsonArray(Groups.Select(g => (JsonNode)g.Raw.DeepClone()).ToArray()), ["Selections"] = JsonSerializer.SerializeToNode(selections) };
+        rawPack["SceneweaverImport"] = new JsonObject { ["Metadata"] = metadata.DeepClone(), ["Defaults"] = defaults.DeepClone(), ["Groups"] = new JsonArray(Groups.Select(g => (JsonNode)g.Raw.DeepClone()).ToArray()), ["Selections"] = JsonSerializer.SerializeToNode(selections),
+            ["NamedSelections"] = JsonSerializer.SerializeToNode(Groups.Select((g, i) => (g.Name, Choices: selections[i].Select(n => g.Options[n]).ToArray())).ToDictionary(g => g.Name, g => g.Choices)) };
         return new(rawPack, pack.ModdedResources.Count, pack.ModdedResources.Keys.Count(p => ModResources.Kind(p) != null));
+    }
+
+    public List<int[]> SelectByName(IReadOnlyDictionary<string, string[]> settings)
+    {
+        var result = new List<int[]>();
+        foreach (var group in Groups)
+        {
+            if (!settings.TryGetValue(group.Name, out var names)) { result.Add(group.Defaults.ToArray()); continue; }
+            var indices = names.Select(n => Array.IndexOf(group.Options, n)).ToArray();
+            if (indices.Any(i => i < 0) || indices.Distinct().Count() != indices.Length || (!group.Multiple && group.Options.Length > 0 && indices.Length != 1))
+                throw new InvalidDataException($"Saved choices for {group.Name} no longer match this mod. Reset to defaults and review its options.");
+            result.Add(indices);
+        }
+        return result;
     }
 
     private sealed class SourceFiles : IDisposable

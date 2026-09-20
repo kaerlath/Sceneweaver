@@ -17,6 +17,7 @@ Shortcut: `/swedit`. The earlier `/crossedit` command remains an alias. Existing
 - Resizable folder/list/preview workspace. Selecting a model displays actual game geometry and supported base-color textures in an isolated side panel; orbit, pan, zoom, fit, auto-rotate and wireframe controls help inspect large objects without spawning them. **Show colors** toggles textures, enabled by default.
 - Native Windows open/save dialogs start in Stagehand's configured library or Intoner's layouts folder, then remember each format's last folder. Stagehand autosaves have a separate open button.
 - A **Mods** library imports Penumbra `.pmp` packages or installed `meta.json` files, with Single/Multi option selection. Selected resource files are embedded, models preview using their modded materials/textures, and models/VFX/sounds can be added with Stagehand-compatible bindings.
+- Browse installed Penumbra mods by name and copy the currently selected collection's options. Single, Multi and Combining groups are supported. Update an embedded mod from its installed source or a package, review removed resources, and keep existing object links. IMC and metadata manipulations remain unsupported and are explicitly rejected.
 - In-game display through Stagehand's temporary-stage API: place at your character, update objects while editing, and hide the editor scene without changing saved Stagehand scenes. Requires Stagehand enabled; Intoner-only furniture remains unsupported by this live backend.
 - CLI conversion and automated tests outside the game.
 
