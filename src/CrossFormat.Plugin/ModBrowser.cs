@@ -119,7 +119,7 @@ public sealed partial class Plugin
         if (ImGui.Button("Apply mod to selected scene object")) Edit(() => selectedObject!.StagehandSource["ModpackId"] = selectedModId);
         ImGui.EndDisabled();
         ImGui.SameLine(); ImGui.TextDisabled(selectedObject?.Name ?? "Select an object in Scene first");
-        ImGui.TextWrapped("Stagehand export keeps these bindings. Intoner export reports mod-bound objects as unsupported. Effects can be added, but animated VFX previews are not available yet.");
+        ImGui.TextWrapped("Stagehand export keeps these bindings. Intoner export reports mod-bound objects as unsupported. VFX can be previewed temporarily in game.");
         ImGui.SetNextItemWidth(-1); ImGui.InputTextWithHint("##modsearch", "Search this mod's resource paths", ref modSearch, 256);
         if (!ImGui.BeginTable("mod-browser", 2, ImGuiTableFlags.Resizable | ImGuiTableFlags.BordersInnerV)) return;
         ImGui.TableSetupColumn("Resources", ImGuiTableColumnFlags.WidthStretch, 1);
@@ -139,7 +139,8 @@ public sealed partial class Plugin
         if (modPreview != null)
         {
             ImGui.TextWrapped(modPreview.Name);
-            previews.Draw(modPreview, new(Math.Max(100, ImGui.GetContentRegionAvail().X), 260), true);
+            if (modPreview.Kind == AssetKind.Vfx) DrawVfxPreview(modPreview);
+            else previews.Draw(modPreview, new(Math.Max(100, ImGui.GetContentRegionAvail().X), 260), true);
             previews.DrawViewOptions();
             if (ImGui.Button("Add mod asset to scene", new(-1, 32))) Run(() => AddSceneAsset(modPreview, live.Enabled));
             if (ImGui.Button("Place in game at my character", new(-1, 0))) Run(() => AddSceneAsset(modPreview, true));

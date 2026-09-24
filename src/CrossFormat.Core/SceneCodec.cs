@@ -85,29 +85,36 @@ public static class SceneCodec
 
     private static SceneProject ImportStagehand(JsonObject root)
     {
+        if ((root["FormatVersion"]?.GetValue<int>() ?? 0) is < 0 or > 1) throw new InvalidDataException("Unsupported Stagehand file format version. Update Sceneweaver before opening this file.");
         var s = new SceneProject { StagehandRoot = Copy(root), Name = root["Info"]?["Name"]?.GetValue<string>() ?? "Imported stage" };
         if (string.IsNullOrWhiteSpace(s.Name)) s.Name = "Imported stage";
-        foreach (var (key, value) in root["Objects"]!.AsObject())
+        void ReadObjects(JsonObject entries, Guid? parent, int depth)
         {
-            var raw = value?.AsObject() ?? throw new InvalidDataException("Null Stagehand object.");
-            var type = raw["Type"]?.GetValue<string>() ?? throw new InvalidDataException("Stagehand object lacks Type.");
-            var kind = type switch { "BgObject" => AssetKind.BgObject, "VfxObject" => AssetKind.Vfx, "Light" => AssetKind.Light, "Sound" => AssetKind.Sound, "Weapon" => AssetKind.Weapon, _ => AssetKind.Unknown };
-            var o = new SceneObject { StagehandId = key, Kind = kind, StagehandSource = Copy(raw) };
-            if (kind == AssetKind.Unknown) { o.Name = raw["DisplayName"]?.GetValue<string>() ?? key; s.Objects.Add(o); continue; }
-            // Discriminator must precede other properties for upstream's serializer.
-            var ordered = new JsonObject { ["Type"] = type };
-            foreach (var p in raw.Where(p => p.Key != "Type")) ordered[p.Key] = p.Value?.DeepClone();
-            var d = ordered.Deserialize<ObjectDefinition>(StageDefinition.StandardSerializerOptions) ?? throw new InvalidDataException("Invalid Stagehand object.");
-            o.Name = d.DisplayName; o.Visible = !d.IsDisabled; o.Position = d.Position; o.RotationDegrees = d.RotationPitchYawRollDegrees; o.Scale = d.Scale;
-            switch (d)
+            if (depth > 63) throw new InvalidDataException("Stagehand groups exceed 63 levels.");
+            foreach (var (key, value) in entries)
             {
-                case BgObjectDefinition b: o.AssetPath = b.ModelGamePath; o.Opacity = b.Opacity; o.Color = b.DyeColor; break;
-                case VfxObjectDefinition v: o.AssetPath = v.VfxGamePath; o.Color = v.Color; break;
-                case LightDefinition l: o.Light = Node(l); break;
-                case SoundObjectDefinition a: o.AssetPath = a.SoundGamePath; break;
+                var raw = value?.AsObject() ?? throw new InvalidDataException("Null Stagehand object.");
+                var type = raw["Type"]?.GetValue<string>() ?? throw new InvalidDataException("Stagehand object lacks Type.");
+                var kind = type switch { "BgObject" => AssetKind.BgObject, "VfxObject" => AssetKind.Vfx, "Light" => AssetKind.Light, "Sound" => AssetKind.Sound, "Weapon" => AssetKind.Weapon, "Group" => AssetKind.Group, _ => AssetKind.Unknown };
+                var o = new SceneObject { StagehandId = key, ParentId = parent, Kind = kind, StagehandSource = Copy(raw) };
+                if (kind == AssetKind.Unknown) { o.Name = raw["DisplayName"]?.GetValue<string>() ?? key; s.Objects.Add(o); continue; }
+                // Discriminator must precede other properties for upstream's serializer.
+                var ordered = new JsonObject { ["Type"] = type };
+                foreach (var p in raw.Where(p => p.Key != "Type" && (kind != AssetKind.Group || p.Key != "Objects"))) ordered[p.Key] = p.Value?.DeepClone();
+                var d = ordered.Deserialize<ObjectDefinition>(StageDefinition.StandardSerializerOptions) ?? throw new InvalidDataException("Invalid Stagehand object.");
+                o.Name = d.DisplayName; o.Visible = !d.IsDisabled; o.Position = d.Position; o.RotationDegrees = d.RotationPitchYawRollDegrees; o.Scale = d.Scale;
+                switch (d)
+                {
+                    case BgObjectDefinition b: o.AssetPath = b.ModelGamePath; o.Opacity = b.Opacity; o.Color = b.DyeColor; break;
+                    case VfxObjectDefinition v: o.AssetPath = v.VfxGamePath; o.Color = v.Color; break;
+                    case LightDefinition l: o.Light = Node(l); break;
+                    case SoundObjectDefinition a: o.AssetPath = a.SoundGamePath; break;
+                }
+                s.Objects.Add(o);
+                if (kind == AssetKind.Group) { o.StagehandSource.Remove("Objects"); ReadObjects(raw["Objects"] as JsonObject ?? new(), o.Id, depth + 1); }
             }
-            s.Objects.Add(o);
         }
+        ReadObjects(root["Objects"]!.AsObject(), null, 0);
         s.ImportNotes.Add("Stagehand saves local coordinates. Use Stage placement to set the world origin for Intoner exports; identity is the default.");
         return s;
     }
@@ -126,6 +133,8 @@ public static class SceneCodec
         var root = Copy(s.StagehandRoot);
         root["Info"] ??= new JsonObject(); root["Info"]!["Name"] = s.Name;
         root["EmbeddedModpacks"] ??= new JsonObject();
+        root["FormatVersion"] = 1;
+        var nodes = new Dictionary<Guid, JsonObject>();
         var objects = new JsonObject(); root["Objects"] = objects;
         List<ConversionIssue> issues = [];
         foreach (var o in s.Objects)
@@ -143,6 +152,7 @@ public static class SceneCodec
                 AssetKind.Light => o.Light.Deserialize<LightDefinition>(ProjectJson.Options) ?? new(),
                 AssetKind.Sound => new SoundObjectDefinition { SoundGamePath = o.AssetPath },
                 AssetKind.Weapon => new WeaponDefinition(),
+                AssetKind.Group => new GroupDefinition(),
                 _ => throw new InvalidDataException("Unsupported object kind."),
             };
             // Keep every source-specific field, replacing only canonical editable fields.
@@ -156,8 +166,14 @@ public static class SceneCodec
             raw["DisplayName"] = o.Name; raw["IsDisabled"] = !o.Visible;
             raw["Position"] = Node(o.Position); raw["RotationPitchYawRollDegrees"] = Node(o.RotationDegrees); raw["Scale"] = Node(o.Scale);
             if (o.Kind == AssetKind.Sound) raw["SoundGamePath"] = o.AssetPath;
-            objects[string.IsNullOrEmpty(o.StagehandId) ? o.Id.ToString() : o.StagehandId] = raw;
+            nodes[o.Id] = raw;
             if (o.IntonerSource.Count > 0) issues.Add(new(o.Name, "Intoner location, collection, folder, lock, rain and playback-only settings remain in the canonical project."));
+        }
+        foreach (var o in s.Objects)
+        {
+            if (!nodes.TryGetValue(o.Id, out var node)) continue;
+            var destination = o.ParentId is Guid id ? nodes[id]["Objects"]!.AsObject() : objects;
+            destination[string.IsNullOrEmpty(o.StagehandId) ? o.Id.ToString() : o.StagehandId] = node;
         }
         if (s.StageTranslation != Vector3.Zero || s.StageRotationDegrees != Vector3.Zero || s.StageUniformScale != 1)
             issues.Add(new(s.Name, "Stagehand file stores local coordinates. Apply the canonical Stage placement in Stagehand when loading; placement is baked only into Intoner output."));
@@ -186,6 +202,7 @@ public static class SceneCodec
         }
         foreach (var o in s.Objects)
         {
+            if (o.Kind == AssetKind.Group) { issues.Add(new(o.Name, "Group structure flattened for Intoner; child world transforms and inherited visibility are preserved.")); continue; }
             if (o.Kind is AssetKind.Weapon or AssetKind.Sound or AssetKind.Unknown) { issues.Add(new(o.Name, "No supported Intoner object type; retained in canonical project.", true)); continue; }
             if (o.StagehandSource["ModpackId"] is JsonValue mod && !string.IsNullOrEmpty(mod.GetValue<string>()))
             {
@@ -207,7 +224,7 @@ public static class SceneCodec
             }
             var t = TransformMath.ToWorld(s, o);
             var location = source?.CreatedIn ?? new ObjectLocationData(0, "", (uint)Math.Max(0, s.StagehandRoot["Info"]?["IntendedTerritoryType"]?.GetValue<int>() ?? 0), "", 0, 0, 0, 0);
-            var w = new WorldObject(o.Id, o.Name, Enum.Parse<WorldObjectKind>(o.Kind.ToString()), o.Visible,
+            var w = new WorldObject(o.Id, o.Name, Enum.Parse<WorldObjectKind>(o.Kind.ToString()), SceneHierarchy.Visible(s, o),
                 new(I(t.Position), I(t.Rotation), I(t.Scale)), source?.CreatedAtUtc ?? s.CreatedAtUtc, location, source?.CollectionId ?? "", model);
             var serialized = Node(w);
             // Validate against the actual upstream DTO with unknown members forbidden.

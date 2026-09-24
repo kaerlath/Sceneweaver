@@ -43,8 +43,8 @@ public sealed partial class Plugin
     private readonly IPluginLog log;
     private readonly Stopwatch liveClock = Stopwatch.StartNew();
 
-    private void TickLive(IFramework _) => live.Tick(() => LiveScene.Build(scene), liveClock.Elapsed);
-    private void OnTerritoryChanged(uint _) => live.Stop("Live display stopped after changing areas.");
+    private void TickLive(IFramework _) { live.Tick(() => LiveScene.Build(scene), liveClock.Elapsed); vfxPreview.Tick(() => previewSnapshot ?? throw new InvalidOperationException("No VFX selected."), liveClock.Elapsed); }
+    private void OnTerritoryChanged(uint _) { live.Stop("Live display stopped after changing areas."); vfxPreview.Stop(); }
     private Vector3 NewObjectPosition() => live.Enabled && objectTable.LocalPlayer is { } player ? LiveScene.LocalPosition(scene, player.Position) : Vector3.Zero;
     private Vector3 PlayerPosition() => objectTable.LocalPlayer?.Position ?? throw new InvalidOperationException("Log into the game to place an object near your character.");
     private void RequireLiveBackend()
@@ -70,7 +70,7 @@ public sealed partial class Plugin
         Edit(() =>
         {
             var copy = System.Text.Json.JsonSerializer.Deserialize<SceneObject>(System.Text.Json.JsonSerializer.Serialize(asset, ProjectJson.Options), ProjectJson.Options)!;
-            copy.Id = Guid.NewGuid(); copy.StagehandId = ""; copy.Position = localPosition ?? Vector3.Zero;
+            copy.Id = Guid.NewGuid(); copy.StagehandId = ""; copy.ParentId = null; copy.Position = localPosition ?? Vector3.Zero;
             scene.Objects.Add(copy); selected = copy.Id;
         });
         if (placeInGame && !live.Enabled) live.Start(() => LiveScene.Build(scene), liveClock.Elapsed);

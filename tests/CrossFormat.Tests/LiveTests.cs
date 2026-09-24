@@ -32,6 +32,19 @@ internal static class LiveTests
             scene.StageTranslation = LiveScene.TranslationAt(scene, scene.Objects[0], world);
             Near(TransformMath.ToWorld(scene, scene.Objects[0]).Position, world); Near(scene.Objects[0].Position, original);
         });
+        test("Preview and editor stages have independent ownership, restart and cleanup", () =>
+        {
+            var backend = new Backend(); var editor = new LiveSceneSession(backend); var preview = new LiveSceneSession(backend);
+            editor.Start(() => LiveScene.Build(Scene()), TimeSpan.Zero);
+            preview.Start(() => LiveScene.Build(Scene()), TimeSpan.Zero);
+            Assert(editor.StageId != preview.StageId);
+            preview.Stop(); Assert(editor.Enabled && !preview.Enabled && backend.Ids.Last() == preview.StageId);
+            preview.Start(() => LiveScene.Build(Scene()), TimeSpan.FromSeconds(1));
+            backend.Location = "another room";
+            preview.Tick(() => LiveScene.Build(Scene()), TimeSpan.FromSeconds(2));
+            Assert(!preview.Enabled && editor.Enabled && backend.Ids.Last() == preview.StageId);
+            editor.Stop(); Assert(backend.Ids.Last() == editor.StageId);
+        });
         test("Live definition keeps mods and visibility while reporting unsupported/incomplete objects", () =>
         {
             var scene = Scene(); var id = ModResources.Attach(scene, new JsonObject { ["DisplayName"] = "Test", ["ModdedResources"] = new JsonObject() });

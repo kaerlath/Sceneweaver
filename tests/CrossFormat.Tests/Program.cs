@@ -201,5 +201,6 @@ Test("Dialog initial folder falls back to an existing library or parent", () =>
 });
 ModTests.Run(Test, testDirectory);
 LiveTests.Run(Test);
+GroupTests.Run(Test);
 Console.WriteLine($"{passed} passed; {failed} failed. Test artifacts: {testDirectory}");
 Environment.ExitCode=failed==0?0:1;

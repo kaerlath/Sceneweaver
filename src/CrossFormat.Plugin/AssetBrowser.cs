@@ -95,7 +95,8 @@ public sealed partial class Plugin
         {
             ImGui.TextWrapped(previewAsset.Name);
             var width = Math.Max(100, ImGui.GetContentRegionAvail().X);
-            previews.Draw(previewAsset, new(width, Math.Clamp(height * .53f, 220, 480)), true);
+            if (previewAsset.Kind == AssetKind.Vfx) DrawVfxPreview(previewAsset);
+            else previews.Draw(previewAsset, new(width, Math.Clamp(height * .53f, 220, 480)), true);
             if (previewAsset.Kind == AssetKind.BgObject)
             {
                 ImGui.TextDisabled("Drag to orbit  |  Wheel to zoom");

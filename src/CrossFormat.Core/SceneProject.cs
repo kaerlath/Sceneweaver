@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 namespace CrossFormat.Core;
 
 public enum SceneFormat { Intoner, Stagehand }
-public enum AssetKind { BgObject, Vfx, Light, Furniture, Weapon, Sound, Unknown }
+public enum AssetKind { BgObject, Vfx, Light, Furniture, Weapon, Sound, Unknown, Group }
 
 public sealed class SceneProject
 {
@@ -31,6 +31,7 @@ public sealed class SceneObject
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public string StagehandId { get; set; } = "";
+    public Guid? ParentId { get; set; }
     public string Name { get; set; } = "New object";
     public AssetKind Kind { get; set; }
     public bool Visible { get; set; } = true;
@@ -92,7 +93,10 @@ public static class ProjectJson
         foreach (var o in scene.Objects)
         {
             if (o.Id == Guid.Empty || !ids.Add(o.Id)) throw new InvalidDataException("Duplicate or empty object ID.");
-            if (!stageIds.Add(string.IsNullOrEmpty(o.StagehandId) ? o.Id.ToString() : o.StagehandId)) throw new InvalidDataException("Duplicate Stagehand object key.");
+            if (!stageIds.Add($"{o.ParentId}/{(string.IsNullOrEmpty(o.StagehandId) ? o.Id.ToString() : o.StagehandId)}")) throw new InvalidDataException("Duplicate Stagehand object key.");
+            _ = SceneHierarchy.Ancestors(scene, o).ToArray();
+            if (o.Kind == AssetKind.Group && (o.Scale.X <= 0 || o.Scale.X != o.Scale.Y || o.Scale.X != o.Scale.Z))
+                throw new InvalidDataException($"{o.Name}: groups need positive uniform scale.");
             Check(o.Position); Check(o.RotationDegrees); Check(o.Scale);
             if (o.Kind == AssetKind.Vfx)
             {
@@ -121,9 +125,10 @@ public static class TransformMath
     }
     public static (Vector3 Position, Vector3 Rotation, Vector3 Scale) ToWorld(SceneProject s, SceneObject o)
     {
-        if (s.StageTranslation == Vector3.Zero && s.StageRotationDegrees == Vector3.Zero && s.StageUniformScale == 1) return (o.Position, o.RotationDegrees, o.Scale);
+        var local = SceneHierarchy.StageTransform(s, o);
+        if (s.StageTranslation == Vector3.Zero && s.StageRotationDegrees == Vector3.Zero && s.StageUniformScale == 1) return local;
         var root = Rotation(s.StageRotationDegrees);
-        return (Vector3.Transform(o.Position * s.StageUniformScale, root) + s.StageTranslation,
-            Degrees(root * Rotation(o.RotationDegrees)), o.Scale * s.StageUniformScale);
+        return (Vector3.Transform(local.Position * s.StageUniformScale, root) + s.StageTranslation,
+            Degrees(root * Rotation(local.Rotation)), local.Scale * s.StageUniformScale);
     }
 }

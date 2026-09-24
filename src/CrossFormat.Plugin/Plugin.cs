@@ -35,7 +35,7 @@ public sealed partial class Plugin : IDalamudPlugin
     {
         pi = pluginInterface; commands = commandManager; previews = new(data, textures);
         this.clientState = clientState; this.objectTable = objectTable; this.framework = framework; this.log = log;
-        liveBackend = new(pi, clientState, objectTable); live = new(liveBackend);
+        liveBackend = new(pi, clientState, objectTable); live = new(liveBackend); vfxPreview = new(liveBackend);
         var folder = pi.GetPluginConfigDirectory();
         previews.ModCacheDirectory = Path.Combine(folder, "mod-preview-cache");
         InitializeLocations(folder);
@@ -77,7 +77,7 @@ public sealed partial class Plugin : IDalamudPlugin
     }
     private void ReplaceScene(SceneProject value)
     {
-        live.Stop("Live display hidden while switching projects.");
+        live.Stop("Live display hidden while switching projects."); vfxPreview.Stop();
         modOpenTask = null; modBuildTask = null; modImport = null; modBuilt = null; modPreview = null;
         updateModId = ""; restoreModChoices = null;
         scene = value; selected = scene.Objects.FirstOrDefault()?.Id ?? Guid.Empty;
@@ -88,7 +88,8 @@ public sealed partial class Plugin : IDalamudPlugin
     private void Draw()
     {
         CompletePicker();
-        if (!open) return;
+        if (!open) { vfxPreview.Stop(); previewSelection = ""; return; }
+        previewDrawn = false;
         previews.SetModpacks(scene.StagehandRoot["EmbeddedModpacks"] as JsonObject);
         ImGui.SetNextWindowSize(new(1280, 860), ImGuiCond.FirstUseEver);
         ImGui.SetNextWindowSizeConstraints(new(980, 650), new(float.MaxValue, float.MaxValue));
@@ -144,6 +145,7 @@ public sealed partial class Plugin : IDalamudPlugin
         }
         ImGui.End();
         ImGui.PopStyleColor(5); ImGui.PopStyleVar(4);
+        if (!previewDrawn || !open) { vfxPreview.Stop(); previewSelection = ""; }
     }
 
     private void DrawScene()
@@ -153,14 +155,12 @@ public sealed partial class Plugin : IDalamudPlugin
         if (ImGui.Button("Add model")) Edit(() => { var o = new SceneObject { Position = NewObjectPosition() }; scene.Objects.Add(o); selected = o.Id; });
         ImGui.SameLine(); if (ImGui.Button("Add VFX")) Edit(() => { var o = new SceneObject { Kind = AssetKind.Vfx, Name = "New VFX", Position = NewObjectPosition() }; scene.Objects.Add(o); selected = o.Id; });
         ImGui.SameLine(); if (ImGui.Button("Add light")) Edit(() => { var o = new SceneObject { Kind = AssetKind.Light, Name = "New light", Position = NewObjectPosition(), Light = JsonSerializer.SerializeToNode(new Stagehand.Definitions.Objects.LightDefinition(), ProjectJson.Options)!.AsObject() }; scene.Objects.Add(o); selected = o.Id; });
+        ImGui.SameLine(); if (ImGui.Button("Add group")) Edit(() => { var g = new SceneObject { Kind = AssetKind.Group, Name = "New group" }; scene.Objects.Add(g); selected = g.Id; });
         var sceneHeight = Math.Max(240, ImGui.GetContentRegionAvail().Y - 160);
         ImGui.BeginChild("objects", new(300, sceneHeight), true);
         ImGui.TextDisabled("SCENE OBJECTS"); ImGui.Separator();
         if (scene.Objects.Count == 0) ImGui.TextWrapped("Your scene is empty. Discover assets to preview models and add what you need, or open an existing layout above.");
-        foreach (var o in scene.Objects)
-        {
-            if (ImGui.Selectable($"{o.Name} [{o.Kind}]##{o.Id}", selected == o.Id)) selected = o.Id;
-        }
+        DrawObjectTree(null);
         ImGui.EndChild(); ImGui.SameLine(); ImGui.BeginChild("inspector", new(0, sceneHeight), true);
         var item = scene.Objects.FirstOrDefault(o => o.Id == selected);
         if (item != null) DrawInspector(item);
@@ -182,7 +182,7 @@ public sealed partial class Plugin : IDalamudPlugin
         ImGui.BeginDisabled(o.Locked);
         if (ImGui.Button("Move to my character")) Run(() =>
         {
-            var position = LiveScene.LocalPosition(scene, PlayerPosition());
+            var position = SceneHierarchy.ToParentPosition(scene, o, LiveScene.LocalPosition(scene, PlayerPosition()));
             Edit(() => o.Position = position);
         });
         ImGui.EndDisabled();
@@ -193,9 +193,11 @@ public sealed partial class Plugin : IDalamudPlugin
             if (ImGui.Button("Remove mod binding")) Edit(() => o.StagehandSource["ModpackId"] = "");
             ImGui.EndDisabled();
         }
-        previews.Draw(o, new(Math.Max(180, ImGui.GetContentRegionAvail().X), 220), true);
+        if (o.Kind == AssetKind.Vfx) DrawVfxPreview(o);
+        else if (o.Kind != AssetKind.Group) previews.Draw(o, new(Math.Max(180, ImGui.GetContentRegionAvail().X), 220), true);
         var locked = o.Locked; if (ImGui.Checkbox("Locked", ref locked)) Edit(() => o.Locked = locked);
         ImGui.BeginDisabled(o.Locked || o.Kind == AssetKind.Unknown);
+        DrawGroupParent(o);
         string name = o.Name, path = o.AssetPath, folder = o.Folder, image = o.PreviewImagePath;
         bool visible = o.Visible; var p = o.Position; var r = o.RotationDegrees; var scale = o.Scale; var color = o.Color; var opacity = o.Opacity;
         if (ImGui.InputText("Name", ref name, 512)) Edit(() => o.Name = name);
@@ -204,7 +206,8 @@ public sealed partial class Plugin : IDalamudPlugin
         if (ImGui.Checkbox("Visible", ref visible)) Edit(() => o.Visible = visible);
         if (ImGui.DragFloat3("Position", ref p, .01f)) Edit(() => o.Position = p);
         if (ImGui.DragFloat3("Pitch / yaw / roll", ref r, .2f)) Edit(() => o.RotationDegrees = r);
-        if (ImGui.DragFloat3("Scale", ref scale, .01f)) Edit(() => o.Scale = scale);
+        if (o.Kind == AssetKind.Group) { float uniform = scale.X; if (ImGui.DragFloat("Group scale", ref uniform, .01f, .001f, 1000)) Edit(() => o.Scale = new Vector3(Math.Clamp(uniform, .001f, 1000))); }
+        else if (ImGui.DragFloat3("Scale", ref scale, .01f)) Edit(() => o.Scale = scale);
         if (o.Kind is AssetKind.BgObject or AssetKind.Vfx)
             if (ImGui.ColorEdit4("Color", ref color)) Edit(() => o.Color = color);
         if (o.Kind == AssetKind.Vfx) DrawVfxPlayback(o);
@@ -218,10 +221,10 @@ public sealed partial class Plugin : IDalamudPlugin
         {
             DrawLight(o);
         }
-        if (ImGui.Button("Duplicate")) Edit(() => { var copy = JsonSerializer.Deserialize<SceneObject>(JsonSerializer.Serialize(o, ProjectJson.Options), ProjectJson.Options)!; copy.Id = Guid.NewGuid(); copy.StagehandId = ""; copy.Name += " copy"; scene.Objects.Add(copy); selected = copy.Id; });
-        ImGui.SameLine(); if (ImGui.Button("Delete")) Edit(() => scene.Objects.Remove(o));
+        if (ImGui.Button("Duplicate")) Edit(() => selected = SceneHierarchy.Duplicate(scene, o).Id);
+        ImGui.SameLine(); if (ImGui.Button(o.Kind == AssetKind.Group ? "Delete group and children" : "Delete")) Edit(() => { var ids = SceneHierarchy.Subtree(scene, o).Select(n => n.Id).ToHashSet(); scene.Objects.RemoveAll(n => ids.Contains(n.Id)); });
         ImGui.EndDisabled();
-        ImGui.BeginDisabled(ModResources.PackId(o).Length > 0);
+        ImGui.BeginDisabled(ModResources.PackId(o).Length > 0 || o.Kind == AssetKind.Group);
         if (ImGui.Button("Save as favorite")) Run(() =>
         {
             assets.Add(JsonSerializer.Deserialize<SceneObject>(JsonSerializer.Serialize(o, ProjectJson.Options), ProjectJson.Options)!);
@@ -229,6 +232,37 @@ public sealed partial class Plugin : IDalamudPlugin
         });
         ImGui.EndDisabled();
         if (ModResources.PackId(o).Length > 0) ImGui.TextDisabled("Mod assets are kept in this project's Mods library.");
+    }
+
+    private void DrawObjectTree(Guid? parent)
+    {
+        foreach (var o in scene.Objects.Where(n => n.ParentId == parent))
+        {
+            if (o.Kind == AssetKind.Group)
+            {
+                bool expanded = ImGui.TreeNodeEx(o.Id.ToString(), ImGuiTreeNodeFlags.OpenOnArrow | (selected == o.Id ? ImGuiTreeNodeFlags.Selected : ImGuiTreeNodeFlags.None), o.Name);
+                if (ImGui.IsItemClicked()) selected = o.Id;
+                if (expanded) { DrawObjectTree(o.Id); ImGui.TreePop(); }
+            }
+            else if (ImGui.Selectable($"{o.Name} [{o.Kind}]##{o.Id}", selected == o.Id)) selected = o.Id;
+        }
+    }
+    private void DrawGroupParent(SceneObject o)
+    {
+        if (ImGui.BeginCombo("Parent group", scene.Objects.FirstOrDefault(n => n.Id == o.ParentId)?.Name ?? "Stage root"))
+        {
+            if (ImGui.Selectable("Stage root", o.ParentId == null)) Edit(() => SceneHierarchy.Reparent(scene, o, null));
+            foreach (var group in scene.Objects.Where(n => n.Kind == AssetKind.Group && n.Id != o.Id && !SceneHierarchy.Ancestors(scene, n).Any(a => a.Id == o.Id)))
+                if (ImGui.Selectable(group.Name + "##" + group.Id, o.ParentId == group.Id)) Edit(() => SceneHierarchy.Reparent(scene, o, group.Id));
+            ImGui.EndCombo();
+        }
+        if (o.ParentId != null) ImGui.TextWrapped("Transforms below are relative to the parent group. Changing parents preserves placement.");
+        if (o.Kind == AssetKind.Group && ImGui.Button("Ungroup (keep children)")) Edit(() =>
+        {
+            foreach (var child in scene.Objects.Where(n => n.ParentId == o.Id).ToArray())
+            { SceneHierarchy.Reparent(scene, child, o.ParentId); child.Visible &= o.Visible; }
+            scene.Objects.Remove(o); selected = Guid.Empty;
+        });
     }
 
     private void DrawVfxPlayback(SceneObject o)
@@ -323,7 +357,8 @@ public sealed partial class Plugin : IDalamudPlugin
     public void Dispose()
     {
         framework.Update -= TickLive; clientState.TerritoryChanged -= OnTerritoryChanged;
-        live.Stop("Sceneweaver unloaded.");
+        live.Stop("Sceneweaver unloaded."); vfxPreview.Stop();
+        if (vfxPreview.CleanupPending) log.Warning("VFX preview cleanup failed: {Status}", vfxPreview.Status);
         if (live.CleanupPending) log.Warning("Sceneweaver could not remove its temporary Stagehand scene on unload: {Status}", live.Status);
         pi.UiBuilder.Draw -= Draw; pi.UiBuilder.OpenMainUi -= Open; pi.UiBuilder.OpenConfigUi -= Open;
         foreach (var command in new[] { "/sceneweaver", "/swedit", "/crossedit" }) commands.RemoveHandler(command);

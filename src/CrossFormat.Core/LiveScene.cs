@@ -15,7 +15,7 @@ public interface ILiveStageBackend
 public static class LiveScene
 {
     public static Vector3 LocalPosition(SceneProject scene, Vector3 worldPosition) => Vector3.Transform(worldPosition - scene.StageTranslation, Quaternion.Inverse(TransformMath.Rotation(scene.StageRotationDegrees))) / scene.StageUniformScale;
-    public static Vector3 TranslationAt(SceneProject scene, SceneObject? anchor, Vector3 worldPosition) => worldPosition - Vector3.Transform((anchor?.Position ?? Vector3.Zero) * scene.StageUniformScale, TransformMath.Rotation(scene.StageRotationDegrees));
+    public static Vector3 TranslationAt(SceneProject scene, SceneObject? anchor, Vector3 worldPosition) => worldPosition - Vector3.Transform((anchor == null ? Vector3.Zero : SceneHierarchy.StageTransform(scene, anchor).Position) * scene.StageUniformScale, TransformMath.Rotation(scene.StageRotationDegrees));
     public static LiveSceneSnapshot Build(SceneProject source)
     {
         var notes = new List<string>();
@@ -33,7 +33,7 @@ public static class LiveScene
         };
         var result = SceneCodec.Export(live, SceneFormat.Stagehand);
         notes.AddRange(result.Issues.Select(i => i.ObjectName + ": " + i.Message));
-        int count = result.Document["Objects"]!.AsObject().Count(p => p.Value?["IsDisabled"]?.GetValue<bool>() != true);
+        int count = objects.Count(o => o.Kind != AssetKind.Group && SceneHierarchy.Visible(live, o) && !result.Issues.Any(i => i.Omitted && i.ObjectName == o.Name));
         return new(result.Json, source.StageTranslation, TransformMath.Rotation(source.StageRotationDegrees), source.StageUniformScale, count, notes.ToArray());
     }
 }
@@ -102,6 +102,6 @@ public sealed class LiveSceneSession(ILiveStageBackend backend)
     private void UpdateStatus(LiveSceneSnapshot snapshot)
     {
         Notes = snapshot.Notes;
-        Status = $"Live in game via Stagehand: {snapshot.VisibleObjects} enabled objects" + (Notes.Length > 0 ? $" / {Notes.Length} not displayed (details below)." : ".");
+        Status = $"Live in game via Stagehand: {snapshot.VisibleObjects} enabled objects" + (Notes.Length > 0 ? $" / {Notes.Length} notes (details below)." : ".");
     }
 }

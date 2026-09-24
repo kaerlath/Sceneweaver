@@ -8,6 +8,9 @@ Shortcut: `/swedit`. The earlier `/crossedit` command remains an alias. Existing
 
 ## What is implemented
 
+- Stagehand 0.5.1 groups: expandable hierarchy, uniform group scale, parent selection preserving placement, duplicate/delete subtrees and ungroup. Stagehand exports preserve nesting; Intoner exports flatten groups with world transforms and inherited visibility.
+- Animated VFX previews in game via a separate temporary Stagehand stage. Preview, restart, stop, distance/scale controls and optional automatic preview on selection work for game assets and embedded mod VFX. Previews do not enter the saved project and stop on closing the editor, leaving the preview panel, switching effects/projects or changing locations.
+
 - Import Intoner `object-layout` JSON versions 1 and 2, Stagehand definition JSON, and canonical `.cross.json` projects.
 - Edit names, visibility, position, pitch/yaw/roll in degrees, nonuniform scale, paths, folders, locks, model opacity/color, VFX tint and light parameters. Add models, VFX and lights; duplicate/delete objects; undo/redo up to 100 edits.
 - Convert background models, VFX and all mapped light fields both ways. Preserve other source data in the canonical project.
