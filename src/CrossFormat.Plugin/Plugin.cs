@@ -31,8 +31,9 @@ public sealed partial class Plugin : IDalamudPlugin
     private string? operationError;
     private bool showOperationError;
 
-    public Plugin(IDalamudPluginInterface pluginInterface, ICommandManager commandManager, IDataManager data, ITextureProvider textures, IClientState clientState, IObjectTable objectTable, IFramework framework, IPluginLog log)
+    public Plugin(IDalamudPluginInterface pluginInterface, ICommandManager commandManager, IDataManager data, ITextureProvider textures, IClientState clientState, IObjectTable objectTable, IFramework framework, IPluginLog log, IGameGui gameGui, ICondition condition)
     {
+        this.gameGui = gameGui; this.condition = condition;
         pi = pluginInterface; commands = commandManager; previews = new(data, textures);
         this.clientState = clientState; this.objectTable = objectTable; this.framework = framework; this.log = log;
         liveBackend = new(pi, clientState, objectTable); live = new(liveBackend); vfxPreview = new(liveBackend);
@@ -80,6 +81,7 @@ public sealed partial class Plugin : IDalamudPlugin
         live.Stop("Live display hidden while switching projects."); vfxPreview.Stop();
         modOpenTask = null; modBuildTask = null; modImport = null; modBuilt = null; modPreview = null;
         updateModId = ""; restoreModChoices = null;
+        ClearWorldPicker();
         scene = value; selected = scene.Objects.FirstOrDefault()?.Id ?? Guid.Empty;
         undo.Clear(); redo.Clear(); pending = null; dirty = false; focusScene = true;
     }
@@ -88,8 +90,8 @@ public sealed partial class Plugin : IDalamudPlugin
     private void Draw()
     {
         CompletePicker();
-        if (!open) { vfxPreview.Stop(); previewSelection = ""; return; }
-        previewDrawn = false;
+        if (!open) { worldPicking = false; vfxPreview.Stop(); previewSelection = ""; return; }
+        previewDrawn = false; worldPickerDrawn = false;
         previews.SetModpacks(scene.StagehandRoot["EmbeddedModpacks"] as JsonObject);
         ImGui.SetNextWindowSize(new(1280, 860), ImGuiCond.FirstUseEver);
         ImGui.SetNextWindowSizeConstraints(new(980, 650), new(float.MaxValue, float.MaxValue));
@@ -138,6 +140,7 @@ public sealed partial class Plugin : IDalamudPlugin
                 if (ImGui.BeginTabItem("Discover assets")) { DrawAssets(); ImGui.EndTabItem(); }
                 if (ImGui.BeginTabItem("Scene", focusScene ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None))
                 { focusScene = false; DrawScene(); ImGui.EndTabItem(); }
+                if (ImGui.BeginTabItem("World picker")) { DrawWorldPicker(); ImGui.EndTabItem(); }
                 if (ImGui.BeginTabItem("Mods")) { DrawMods(); ImGui.EndTabItem(); }
                 if (ImGui.BeginTabItem("Save & export")) { DrawFiles(); ImGui.EndTabItem(); }
                 ImGui.EndTabBar();
@@ -145,6 +148,8 @@ public sealed partial class Plugin : IDalamudPlugin
         }
         ImGui.End();
         ImGui.PopStyleColor(5); ImGui.PopStyleVar(4);
+        if (!worldPickerDrawn || !open) worldPicking = false;
+        DrawWorldMarkers();
         if (!previewDrawn || !open) { vfxPreview.Stop(); previewSelection = ""; }
     }
 

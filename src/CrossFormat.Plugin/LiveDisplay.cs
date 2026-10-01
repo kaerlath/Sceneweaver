@@ -43,8 +43,8 @@ public sealed partial class Plugin
     private readonly IPluginLog log;
     private readonly Stopwatch liveClock = Stopwatch.StartNew();
 
-    private void TickLive(IFramework _) { live.Tick(() => LiveScene.Build(scene), liveClock.Elapsed); vfxPreview.Tick(() => previewSnapshot ?? throw new InvalidOperationException("No VFX selected."), liveClock.Elapsed); }
-    private void OnTerritoryChanged(uint _) { live.Stop("Live display stopped after changing areas."); vfxPreview.Stop(); }
+    private void TickLive(IFramework _) { TickWorldPicker(); live.Tick(() => LiveScene.Build(scene), liveClock.Elapsed); vfxPreview.Tick(() => previewSnapshot ?? throw new InvalidOperationException("No VFX selected."), liveClock.Elapsed); }
+    private void OnTerritoryChanged(uint _) { ClearWorldPicker(); live.Stop("Live display stopped after changing areas."); vfxPreview.Stop(); }
     private Vector3 NewObjectPosition() => live.Enabled && objectTable.LocalPlayer is { } player ? LiveScene.LocalPosition(scene, player.Position) : Vector3.Zero;
     private Vector3 PlayerPosition() => objectTable.LocalPlayer?.Position ?? throw new InvalidOperationException("Log into the game to place an object near your character.");
     private void RequireLiveBackend()

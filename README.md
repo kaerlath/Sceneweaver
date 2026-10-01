@@ -8,6 +8,8 @@ Shortcut: `/swedit`. The earlier `/crossedit` command remains an alias. Existing
 
 ## What is implemented
 
+- World picker with Nearby and session Recent lists, model/VFX resource details, copy path, previews, favorites and copy-at-original-placement. Click world-origin markers to select; this is not mesh-accurate hit testing. Scans loaded scene objects within 200 m. Mod-specific paths require importing their source mod separately.
+
 - Stagehand 0.5.1 groups: expandable hierarchy, uniform group scale, parent selection preserving placement, duplicate/delete subtrees and ungroup. Stagehand exports preserve nesting; Intoner exports flatten groups with world transforms and inherited visibility.
 - Animated VFX previews in game via a separate temporary Stagehand stage. Preview, restart, stop, distance/scale controls and optional automatic preview on selection work for game assets and embedded mod VFX. Previews do not enter the saved project and stop on closing the editor, leaving the preview panel, switching effects/projects or changing locations.
 
