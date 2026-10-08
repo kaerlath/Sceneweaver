@@ -59,7 +59,7 @@ internal static class GroupTests
             var s = Fixture(); s.Objects[0].ParentId = s.Objects[1].Id; Reject(() => ProjectJson.Validate(s));
             s = Fixture(); s.Objects[1].ParentId = Guid.NewGuid(); Reject(() => ProjectJson.Validate(s));
             s = Fixture(); s.Objects[0].Scale = new(1, 2, 1); Reject(() => ProjectJson.Validate(s));
-            Reject(() => SceneCodec.Import("""{"FormatVersion":2,"Info":{},"Objects":{}}"""));
+            Reject(() => SceneCodec.Import("""{"FormatVersion":3,"Info":{},"Objects":{}}"""));
         });
         test("VFX preview isolates one effect and keeps mod data without changing the saved scene", () =>
         {

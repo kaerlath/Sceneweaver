@@ -78,7 +78,7 @@ public sealed partial class Plugin
                 {
                     var newResources = modBuilt.Pack["ModdedResources"]!.AsObject();
                     var removed = oldResources.Select(p => p.Key).Where(k => !newResources.ContainsKey(k)).ToHashSet(StringComparer.OrdinalIgnoreCase);
-                    ImGui.TextWrapped($"{removed.Count} previous resource paths will be removed; {scene.Objects.Count(o => ModResources.PackId(o) == updateModId && removed.Contains(o.AssetPath))} scene objects use those paths and may revert to the game asset.");
+                    ImGui.TextWrapped($"{removed.Count} previous resource paths will be removed; {scene.Objects.Count(o => ModResources.PackId(o) == updateModId && removed.Contains(o.Kind == AssetKind.Light ? LightSettings.Read(o).ProjectedTextureGamePath : o.AssetPath))} scene objects use those paths and may revert to the game asset.");
                 }
                 if (ImGui.Button(updateModId.Length == 0 ? "Add mod to this project" : "Apply reviewed mod update")) Run(() =>
                 {
@@ -119,7 +119,7 @@ public sealed partial class Plugin
         if (ImGui.Button("Apply mod to selected scene object")) Edit(() => selectedObject!.StagehandSource["ModpackId"] = selectedModId);
         ImGui.EndDisabled();
         ImGui.SameLine(); ImGui.TextDisabled(selectedObject?.Name ?? "Select an object in Scene first");
-        ImGui.TextWrapped("Stagehand export keeps these bindings. Intoner export reports mod-bound objects as unsupported. VFX can be previewed temporarily in game.");
+        ImGui.TextWrapped("Stagehand export keeps these bindings. Intoner export omits mod-bound assets; lights export without projected textures. VFX can be previewed temporarily in game.");
         ImGui.SetNextItemWidth(-1); ImGui.InputTextWithHint("##modsearch", "Search this mod's resource paths", ref modSearch, 256);
         if (!ImGui.BeginTable("mod-browser", 2, ImGuiTableFlags.Resizable | ImGuiTableFlags.BordersInnerV)) return;
         ImGui.TableSetupColumn("Resources", ImGuiTableColumnFlags.WidthStretch, 1);

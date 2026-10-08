@@ -85,7 +85,7 @@ public static class SceneCodec
 
     private static SceneProject ImportStagehand(JsonObject root)
     {
-        if ((root["FormatVersion"]?.GetValue<int>() ?? 0) is < 0 or > 1) throw new InvalidDataException("Unsupported Stagehand file format version. Update Sceneweaver before opening this file.");
+        if ((root["FormatVersion"]?.GetValue<int>() ?? 0) is < 0 or > 2) throw new InvalidDataException("Unsupported Stagehand file format version. Update Sceneweaver before opening this file.");
         var s = new SceneProject { StagehandRoot = Copy(root), Name = root["Info"]?["Name"]?.GetValue<string>() ?? "Imported stage" };
         if (string.IsNullOrWhiteSpace(s.Name)) s.Name = "Imported stage";
         void ReadObjects(JsonObject entries, Guid? parent, int depth)
@@ -133,7 +133,7 @@ public static class SceneCodec
         var root = Copy(s.StagehandRoot);
         root["Info"] ??= new JsonObject(); root["Info"]!["Name"] = s.Name;
         root["EmbeddedModpacks"] ??= new JsonObject();
-        root["FormatVersion"] = 1;
+        root["FormatVersion"] = 2;
         var nodes = new Dictionary<Guid, JsonObject>();
         var objects = new JsonObject(); root["Objects"] = objects;
         List<ConversionIssue> issues = [];
@@ -149,7 +149,7 @@ public static class SceneCodec
             {
                 AssetKind.BgObject => new BgObjectDefinition { ModelGamePath = o.AssetPath, Opacity = o.Opacity, DyeColor = o.Color },
                 AssetKind.Vfx => new VfxObjectDefinition { VfxGamePath = o.AssetPath, Color = o.Color },
-                AssetKind.Light => o.Light.Deserialize<LightDefinition>(ProjectJson.Options) ?? new(),
+                AssetKind.Light => LightSettings.Read(o),
                 AssetKind.Sound => new SoundObjectDefinition { SoundGamePath = o.AssetPath },
                 AssetKind.Weapon => new WeaponDefinition(),
                 AssetKind.Group => new GroupDefinition(),
@@ -204,7 +204,7 @@ public static class SceneCodec
         {
             if (o.Kind == AssetKind.Group) { issues.Add(new(o.Name, "Group structure flattened for Intoner; child world transforms and inherited visibility are preserved.")); continue; }
             if (o.Kind is AssetKind.Weapon or AssetKind.Sound or AssetKind.Unknown) { issues.Add(new(o.Name, "No supported Intoner object type; retained in canonical project.", true)); continue; }
-            if (o.StagehandSource["ModpackId"] is JsonValue mod && !string.IsNullOrEmpty(mod.GetValue<string>()))
+            if (o.Kind != AssetKind.Light && o.StagehandSource["ModpackId"] is JsonValue mod && !string.IsNullOrEmpty(mod.GetValue<string>()))
             {
                 issues.Add(new(o.Name, "Stagehand modpack resource bindings cannot be resolved by Intoner; object omitted, complete data retained in canonical project.", true)); continue;
             }
@@ -220,7 +220,11 @@ public static class SceneCodec
                 case AssetKind.Furniture:
                     if (model.Furniture == null) { issues.Add(new(o.Name, "Furniture needs an imported Intoner shared-group payload.", true)); continue; }
                     model = model with { Furniture = model.Furniture with { SharedGroupPath = o.AssetPath, Transparency = o.Opacity, Color = model.Furniture.Color with { CustomColor = I(o.Color) } } }; break;
-                case AssetKind.Light: model = model with { Light = ToIntonerLight(o.Light.Deserialize<LightDefinition>(ProjectJson.Options) ?? new()) }; break;
+                case AssetKind.Light:
+                    var light = LightSettings.Read(o);
+                    if (light.ProjectedTextureGamePath.Length > 0)
+                        issues.Add(new(o.Name, "Projected light textures are not supported by the Intoner contract. The texture and its mod binding remain in the Sceneweaver project and Stagehand export."));
+                    model = model with { Light = ToIntonerLight(light) }; break;
             }
             var t = TransformMath.ToWorld(s, o);
             var location = source?.CreatedIn ?? new ObjectLocationData(0, "", (uint)Math.Max(0, s.StagehandRoot["Info"]?["IntendedTerritoryType"]?.GetValue<int>() ?? 0), "", 0, 0, 0, 0);

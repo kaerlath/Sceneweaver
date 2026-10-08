@@ -91,7 +91,7 @@ public sealed partial class Plugin : IDalamudPlugin
     {
         CompletePicker();
         if (!open) { worldPicking = false; vfxPreview.Stop(); previewSelection = ""; return; }
-        previewDrawn = false; worldPickerDrawn = false;
+        previewDrawn = false; worldPickerDrawn = false; sceneDrawn = false;
         previews.SetModpacks(scene.StagehandRoot["EmbeddedModpacks"] as JsonObject);
         ImGui.SetNextWindowSize(new(1280, 860), ImGuiCond.FirstUseEver);
         ImGui.SetNextWindowSizeConstraints(new(980, 650), new(float.MaxValue, float.MaxValue));
@@ -150,11 +150,13 @@ public sealed partial class Plugin : IDalamudPlugin
         ImGui.PopStyleColor(5); ImGui.PopStyleVar(4);
         if (!worldPickerDrawn || !open) worldPicking = false;
         DrawWorldMarkers();
+        DrawTransformGizmo();
         if (!previewDrawn || !open) { vfxPreview.Stop(); previewSelection = ""; }
     }
 
     private void DrawScene()
     {
+        DrawTransformToolbar();
         var name = scene.Name;
         if (ImGui.InputText("Project name", ref name, 512)) Edit(() => scene.Name = name);
         if (ImGui.Button("Add model")) Edit(() => { var o = new SceneObject { Position = NewObjectPosition() }; scene.Objects.Add(o); selected = o.Id; });
@@ -163,9 +165,13 @@ public sealed partial class Plugin : IDalamudPlugin
         ImGui.SameLine(); if (ImGui.Button("Add group")) Edit(() => { var g = new SceneObject { Kind = AssetKind.Group, Name = "New group" }; scene.Objects.Add(g); selected = g.Id; });
         var sceneHeight = Math.Max(240, ImGui.GetContentRegionAvail().Y - 160);
         ImGui.BeginChild("objects", new(300, sceneHeight), true);
-        ImGui.TextDisabled("SCENE OBJECTS"); ImGui.Separator();
+        ImGui.TextDisabled("SCENE OBJECTS");
+        ImGui.BeginDisabled(selected == Guid.Empty);
+        if (ImGui.Button("Reveal selected")) revealSelection = true;
+        ImGui.EndDisabled(); ImGui.Separator();
         if (scene.Objects.Count == 0) ImGui.TextWrapped("Your scene is empty. Discover assets to preview models and add what you need, or open an existing layout above.");
         DrawObjectTree(null);
+        revealSelection = false;
         ImGui.EndChild(); ImGui.SameLine(); ImGui.BeginChild("inspector", new(0, sceneHeight), true);
         var item = scene.Objects.FirstOrDefault(o => o.Id == selected);
         if (item != null) DrawInspector(item);
@@ -210,9 +216,12 @@ public sealed partial class Plugin : IDalamudPlugin
         if (ImGui.InputText("Folder", ref folder, 512)) Edit(() => o.Folder = folder);
         if (ImGui.Checkbox("Visible", ref visible)) Edit(() => o.Visible = visible);
         if (ImGui.DragFloat3("Position", ref p, .01f)) Edit(() => o.Position = p);
+        TransformMenu("position", o.Position, value => o.Position = value);
         if (ImGui.DragFloat3("Pitch / yaw / roll", ref r, .2f)) Edit(() => o.RotationDegrees = r);
+        TransformMenu("rotation", o.RotationDegrees, value => o.RotationDegrees = value);
         if (o.Kind == AssetKind.Group) { float uniform = scale.X; if (ImGui.DragFloat("Group scale", ref uniform, .01f, .001f, 1000)) Edit(() => o.Scale = new Vector3(Math.Clamp(uniform, .001f, 1000))); }
         else if (ImGui.DragFloat3("Scale", ref scale, .01f)) Edit(() => o.Scale = scale);
+        TransformMenu("scale", o.Scale, value => o.Scale = value, o.Kind == AssetKind.Group);
         if (o.Kind is AssetKind.BgObject or AssetKind.Vfx)
             if (ImGui.ColorEdit4("Color", ref color)) Edit(() => o.Color = color);
         if (o.Kind == AssetKind.Vfx) DrawVfxPlayback(o);
@@ -245,11 +254,19 @@ public sealed partial class Plugin : IDalamudPlugin
         {
             if (o.Kind == AssetKind.Group)
             {
-                bool expanded = ImGui.TreeNodeEx(o.Id.ToString(), ImGuiTreeNodeFlags.OpenOnArrow | (selected == o.Id ? ImGuiTreeNodeFlags.Selected : ImGuiTreeNodeFlags.None), o.Name);
+                var selectedItem = scene.Objects.FirstOrDefault(n => n.Id == selected);
+                bool containsSelection = selectedItem != null && SceneHierarchy.Ancestors(scene, selectedItem).Any(n => n.Id == o.Id);
+                if (revealSelection && containsSelection) ImGui.SetNextItemOpen(true);
+                bool expanded = ImGui.TreeNodeEx(o.Id.ToString(), ImGuiTreeNodeFlags.OpenOnArrow | (selected == o.Id ? ImGuiTreeNodeFlags.Selected : ImGuiTreeNodeFlags.None), (containsSelection ? "* " : "") + o.Name);
+                if (revealSelection && selected == o.Id) ImGui.SetScrollHereY(.5f);
                 if (ImGui.IsItemClicked()) selected = o.Id;
                 if (expanded) { DrawObjectTree(o.Id); ImGui.TreePop(); }
             }
-            else if (ImGui.Selectable($"{o.Name} [{o.Kind}]##{o.Id}", selected == o.Id)) selected = o.Id;
+            else
+            {
+                if (ImGui.Selectable($"{o.Name} [{o.Kind}]##{o.Id}", selected == o.Id)) selected = o.Id;
+                if (revealSelection && selected == o.Id) ImGui.SetScrollHereY(.5f);
+            }
         }
     }
     private void DrawGroupParent(SceneObject o)
@@ -292,13 +309,14 @@ public sealed partial class Plugin : IDalamudPlugin
 
     private void DrawLight(SceneObject o)
     {
-        var light = o.Light.Deserialize<Stagehand.Definitions.Objects.LightDefinition>(ProjectJson.Options) ?? new();
+        var light = LightSettings.Read(o);
         bool changed = false;
         var shape = (int)light.Shape; if (ImGui.Combo("Shape", ref shape, "Ambient\0Point\0Spot\0Flat\0")) { light.Shape = (Stagehand.Definitions.Objects.LightShape)shape; changed = true; }
         var falloff = (int)light.FalloffFunction; if (ImGui.Combo("Falloff", ref falloff, "Linear\0Quadratic\0Cubic\0")) { light.FalloffFunction = (Stagehand.Definitions.Objects.LightFalloffFunction)falloff; changed = true; }
         var color = light.Color; if (ImGui.ColorEdit3("Light color", ref color, ImGuiColorEditFlags.Hdr | ImGuiColorEditFlags.Float)) { light.Color = color; changed = true; }
         void Number(string label, float value, Action<float> set, float min = 0, float max = 10000) { if (ImGui.DragFloat(label, ref value, .05f, min, max)) { set(value); changed = true; } }
         void Flag(string label, bool value, Action<bool> set) { if (ImGui.Checkbox(label, ref value)) { set(value); changed = true; } }
+        DrawLightTexture(o, light, ref changed);
         Number("Intensity", light.Intensity, v => light.Intensity = v);
         Number("Range", light.Range, v => light.Range = v);
         Number("Falloff factor", light.FalloffFactor, v => light.FalloffFactor = v);
@@ -312,7 +330,7 @@ public sealed partial class Plugin : IDalamudPlugin
         Flag("Dynamic shadows", light.EnableDynamicShadows, v => light.EnableDynamicShadows = v);
         Flag("Character shadows", light.EnableCharacterShadows, v => light.EnableCharacterShadows = v);
         Flag("Object shadows", light.EnableObjectShadows, v => light.EnableObjectShadows = v);
-        if (changed) Edit(() => o.Light = JsonSerializer.SerializeToNode(light, ProjectJson.Options)!.AsObject());
+        if (changed) Edit(() => LightSettings.Write(o, light));
     }
 
     private void SaveLibrary() => ProjectFiles.Commit(new SavePlan([new(libraryPath, JsonSerializer.Serialize(assets, ProjectJson.Options))], []));

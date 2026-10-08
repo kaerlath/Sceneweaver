@@ -23,7 +23,7 @@ internal static unsafe class WorldSceneReader
                 if (type == ObjectType.BgObject)
                 {
                     var model = (BgObject*)node;
-                    if (model->ModelResourceHandle != null && model->ModelResourceHandle->LoadState >= 7)
+                    if (model->ModelResourceHandle != null && model->ModelResourceHandle->LoadState == 7)
                     {
                         path = model->ModelResourceHandle->FileName.ToString();
                         opacity = 1 - model->GetTransparency();
