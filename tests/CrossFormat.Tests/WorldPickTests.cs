@@ -35,5 +35,26 @@ internal static class WorldPickTests
             var recent = Pick() with { Key = "20", Position = new(5, 6, 7) }; history.Add(recent);
             Assert(history.Items.Count == 50 && history.Items[0] == recent && history.Items.Count(p => p.Key == "20") == 1);
         });
+        test("Effects nearby filters by kind and path without excluding mod-specific effects", () =>
+        {
+            var model = Pick();
+            var effect = Pick("vfx/mist.avfx", AssetKind.Vfx) with { Key = "effect" };
+            var mod = Pick("|mod|vfx/mist.avfx", AssetKind.Vfx) with { Key = "mod" };
+            var items = new[] { model, effect, mod };
+            Assert(WorldPickView.Filter(items, "MIST", true).SequenceEqual(new[] { effect, mod }));
+            Assert(WorldPickView.Filter(items, "", false).Count() == 3);
+            Assert(!WorldPickView.Filter(items, "missing", true).Any());
+        });
+        test("Selection highlight requires a matching current snapshot and never resolves by name alone", () =>
+        {
+            var old = Pick("vfx/mist.avfx", AssetKind.Vfx);
+            var current = old with { Color = Vector4.One };
+            Assert(WorldPickView.Current([current], old) == current);
+            Assert(WorldPickView.Current([], old) == null);
+            Assert(WorldPickView.Current([current], null) == null);
+            Assert(WorldPickView.Current([current with { Key = "other-origin" }], old) == null);
+            Assert(WorldPickView.Current([current with { ResourcePath = "vfx/other.avfx" }], old) == null);
+            Assert(WorldPickView.Current([current with { Kind = AssetKind.BgObject }], old) == null);
+        });
     }
 }

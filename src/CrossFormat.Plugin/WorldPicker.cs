@@ -14,6 +14,7 @@ public sealed partial class Plugin
     private WorldPick? pickedObject;
     private SceneObject? pickedAsset;
     private bool worldPickerDrawn, worldPicking, refreshWorld = true, autoRefreshWorld = true;
+    private bool effectsNearby, highlightWorldSelection = true;
     private TimeSpan nextWorldRefresh;
     private string worldFilter = "", worldReadStatus = "Open Nearby or refresh to scan loaded objects.";
 
@@ -37,7 +38,7 @@ public sealed partial class Plugin
     {
         pickedObject = item; pickedAsset = item.CanUse ? item.CreateAsset() : null; pickHistory.Add(item); previews.ResetView();
     }
-    private IEnumerable<WorldPick> FilterPicks(IEnumerable<WorldPick> source) => source.Where(p => p.ResourcePath.Contains(worldFilter, StringComparison.OrdinalIgnoreCase));
+    private IEnumerable<WorldPick> FilterPicks(IEnumerable<WorldPick> source) => WorldPickView.Filter(source, worldFilter, effectsNearby);
     private void DrawWorldPicker()
     {
         worldPickerDrawn = true;
@@ -45,6 +46,7 @@ public sealed partial class Plugin
         if (ImGui.Button(worldPicking ? "Cancel picking" : "Pick in world")) { worldPicking = !worldPicking; refreshWorld = true; nextWorldRefresh = TimeSpan.Zero; }
         ImGui.SameLine(); if (ImGui.Button("Refresh nearby")) { refreshWorld = true; nextWorldRefresh = TimeSpan.Zero; }
         ImGui.SameLine(); ImGui.Checkbox("Refresh automatically", ref autoRefreshWorld);
+        ImGui.Checkbox("Highlight selected origin", ref highlightWorldSelection);
         ImGui.TextWrapped(worldReadStatus);
         ImGui.InputTextWithHint("##world-filter", "Filter model / VFX paths", ref worldFilter, 256);
         if (worldPicking) ImGui.TextWrapped("Click a circle in the world to select it. Escape or right-click cancels. Overlapping markers select the closest origin to your character.");
@@ -55,8 +57,14 @@ public sealed partial class Plugin
         ImGui.BeginChild("world-list", new(0, Math.Max(240, ImGui.GetContentRegionAvail().Y - 20)), false);
         if (ImGui.BeginTabBar("world-lists"))
         {
-            if (ImGui.BeginTabItem("Nearby")) { DrawPickList(nearbyObjects); ImGui.EndTabItem(); }
-            if (ImGui.BeginTabItem("Recent")) { DrawPickList(pickHistory.Items.ToArray()); ImGui.EndTabItem(); }
+            if (ImGui.BeginTabItem("Nearby")) { effectsNearby = false; DrawPickList(nearbyObjects); ImGui.EndTabItem(); }
+            if (ImGui.BeginTabItem("Effects nearby"))
+            {
+                effectsNearby = true;
+                ImGui.TextWrapped("Loaded VFX on your client, including shared scenes. Names come from resource filenames; ownership and scene names are unknown.");
+                DrawPickList(nearbyObjects); ImGui.EndTabItem();
+            }
+            if (ImGui.BeginTabItem("Recent")) { effectsNearby = false; DrawPickList(pickHistory.Items.ToArray()); ImGui.EndTabItem(); }
             ImGui.EndTabBar();
         }
         ImGui.EndChild(); ImGui.TableNextColumn();
@@ -65,6 +73,11 @@ public sealed partial class Plugin
         {
             ImGui.TextWrapped(item.ResourcePath);
             ImGui.TextWrapped($"{item.Kind} | Position {item.Position} | Scale {item.Scale}");
+            var current = WorldPickView.Current(nearbyObjects, item);
+            if (current == null) ImGui.TextWrapped("Not found in the latest scan. This snapshot is not highlighted; refresh to check again.");
+            else if (highlightWorldSelection)
+                ImGui.TextWrapped(gameGui.WorldToScreen(current.Position, out _) ? "The selected origin is marked in gold. This marks its source position, not the full effect's shape." : "The selected origin is off-screen. Turn the camera to locate it.");
+            if (!autoRefreshWorld) ImGui.TextDisabled("Highlight uses the last scan. Refresh to update it.");
             if (ImGui.Button("Copy resource path")) ImGui.SetClipboardText(item.ResourcePath);
             ImGui.TextWrapped("Picking records resource paths and transforms. It does not capture another plugin's mod files. For modded appearances, import and bind the source mod through Mods.");
             if (pickedAsset is { } asset)
@@ -90,7 +103,10 @@ public sealed partial class Plugin
     }
     private void DrawPickList(IEnumerable<WorldPick> items)
     {
-        foreach (var item in FilterPicks(items))
+        var matches = FilterPicks(items).ToArray();
+        ImGui.TextDisabled($"{matches.Length} matching {(effectsNearby ? "effects" : "objects")}");
+        if (matches.Length == 0) ImGui.TextWrapped("No matches in the current scan. Try Refresh nearby or clear the filter. Only loaded objects within the scan limits can appear.");
+        foreach (var item in matches)
         {
             float distance = objectTable.LocalPlayer is { } player ? Vector3.Distance(player.Position, item.Position) : 0;
             if (ImGui.Selectable($"{distance:F1} m | {Path.GetFileName(item.ResourcePath)} [{item.Kind}]##{item.Key}", pickedObject?.Key == item.Key)) SelectWorldObject(item);
@@ -99,6 +115,7 @@ public sealed partial class Plugin
     }
     private void DrawWorldMarkers()
     {
+        DrawWorldSelectionHighlight();
         if (!worldPicking) return;
         if (ImGui.IsKeyPressed(ImGuiKey.Escape) || ImGui.IsMouseClicked(ImGuiMouseButton.Right)) { worldPicking = false; return; }
         bool overUi = ImGui.IsWindowHovered(ImGuiHoveredFlags.AnyWindow | ImGuiHoveredFlags.AllowWhenBlockedByActiveItem);
@@ -115,5 +132,31 @@ public sealed partial class Plugin
             ImGui.SetTooltip(hover.ResourcePath);
             if (ImGui.IsMouseClicked(ImGuiMouseButton.Left)) { SelectWorldObject(hover); worldPicking = false; }
         }
+    }
+
+    private void DrawWorldSelectionHighlight()
+    {
+        if (!open || !worldPickerDrawn || !highlightWorldSelection || !clientState.IsLoggedIn || objectTable.LocalPlayer == null
+            || condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.BetweenAreas]
+            || condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.BetweenAreas51]) return;
+        var item = WorldPickView.Current(nearbyObjects, pickedObject);
+        if (item == null || (effectsNearby && item.Kind != AssetKind.Vfx) || !gameGui.WorldToScreen(item.Position, out var screen)) return;
+        var draw = ImGui.GetForegroundDrawList();
+        const uint gold = 0xFF55DDFF;
+        float radius = 16 + 3 * MathF.Sin((float)liveClock.Elapsed.TotalSeconds * 4);
+        draw.AddCircle(screen, radius, gold, 32, 3);
+        draw.AddLine(screen - new Vector2(10, 0), screen + new Vector2(10, 0), gold, 2);
+        draw.AddLine(screen - new Vector2(0, 10), screen + new Vector2(0, 10), gold, 2);
+        var name = Path.GetFileName(item.ResourcePath);
+        if (name.Length > 72) name = name[..69] + "...";
+        string label = $"Selected: {name} | {Vector3.Distance(objectTable.LocalPlayer.Position, item.Position):F1} m";
+        var pos = screen + new Vector2(22, -12);
+        var size = ImGui.CalcTextSize(label);
+        var viewport = ImGui.GetMainViewport();
+        var min = viewport.Pos + new Vector2(4);
+        var max = Vector2.Max(min, viewport.Pos + viewport.Size - size - new Vector2(4));
+        pos = Vector2.Clamp(pos, min, max);
+        draw.AddRectFilled(pos - new Vector2(4), pos + size + new Vector2(4), 0xDD17120D, 4);
+        draw.AddText(pos, gold, label);
     }
 }

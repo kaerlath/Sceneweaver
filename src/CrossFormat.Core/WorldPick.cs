@@ -29,3 +29,13 @@ public sealed class WorldPickHistory
         if (Items.Count > 50) Items.RemoveRange(50, Items.Count - 50);
     }
 }
+
+public static class WorldPickView
+{
+    public static IEnumerable<WorldPick> Filter(IEnumerable<WorldPick> items, string query, bool effectsOnly) =>
+        items.Where(p => (!effectsOnly || p.Kind == AssetKind.Vfx) && p.ResourcePath.Contains(query, StringComparison.OrdinalIgnoreCase));
+
+    // Recent selections are snapshots. Never highlight a vanished entry at its old position.
+    public static WorldPick? Current(IEnumerable<WorldPick> nearby, WorldPick? selected) =>
+        selected == null ? null : nearby.FirstOrDefault(p => p.Key == selected.Key && p.Kind == selected.Kind && p.ResourcePath == selected.ResourcePath);
+}
