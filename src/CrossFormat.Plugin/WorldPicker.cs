@@ -20,6 +20,7 @@ public sealed partial class Plugin
 
     private void ClearWorldPicker()
     {
+        captureRequested = false; worldCapture = null; captureSelection.Clear();
         worldPicking = false; nearbyObjects = []; pickHistory.Items.Clear(); pickedObject = null; pickedAsset = null;
         nextWorldRefresh = liveClock.Elapsed + TimeSpan.FromSeconds(2); refreshWorld = true;
     }
@@ -28,11 +29,22 @@ public sealed partial class Plugin
         if (!clientState.IsLoggedIn || condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.BetweenAreas] || condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.BetweenAreas51])
         { ClearWorldPicker(); return; }
         if (!open || !worldPickerDrawn || objectTable.LocalPlayer == null || liveClock.Elapsed < nextWorldRefresh) return;
-        if (!refreshWorld && !autoRefreshWorld && !worldPicking) return;
+        if (!refreshWorld && !autoRefreshWorld && !worldPicking && !captureRequested) return;
         nextWorldRefresh = liveClock.Elapsed + TimeSpan.FromSeconds(worldPicking ? .5 : 3);
         refreshWorld = false;
-        try { nearbyObjects = WorldSceneReader.Read(objectTable.LocalPlayer.Position); worldReadStatus = $"{nearbyObjects.Count} loaded models/effects within 200 m (up to 2,000)."; }
-        catch (Exception e) { worldPicking = false; nearbyObjects = []; worldReadStatus = "Could not read world objects: " + e.Message; log.Error(e, "World picker scan failed"); }
+        try
+        {
+            var origin = objectTable.LocalPlayer.Position;
+            nearbyObjects = WorldSceneReader.Read(origin); worldReadStatus = $"{nearbyObjects.Count} loaded models/effects within 200 m (up to 2,000).";
+            if (captureRequested)
+            {
+                worldCapture = WorldCapture.Take(nearbyObjects, origin, captureRadius);
+                captureSelection.Clear();
+                for (int i = 0; i < worldCapture.Items.Length; i++) if (worldCapture.Items[i].CanUse) captureSelection.Add(i);
+                captureRequested = false;
+            }
+        }
+        catch (Exception e) { captureRequested = false; worldPicking = false; nearbyObjects = []; worldReadStatus = "Could not read world objects: " + e.Message; log.Error(e, "World picker scan failed"); }
     }
     private void SelectWorldObject(WorldPick item)
     {
@@ -42,6 +54,7 @@ public sealed partial class Plugin
     private void DrawWorldPicker()
     {
         worldPickerDrawn = true;
+        DrawCaptureControls();
         ImGui.TextWrapped("Pick a loaded model or VFX. World markers indicate object origins; they are not exact mesh hit tests and may be visible through walls. Recent entries are snapshots, not live objects.");
         if (ImGui.Button(worldPicking ? "Cancel picking" : "Pick in world")) { worldPicking = !worldPicking; refreshWorld = true; nextWorldRefresh = TimeSpan.Zero; }
         ImGui.SameLine(); if (ImGui.Button("Refresh nearby")) { refreshWorld = true; nextWorldRefresh = TimeSpan.Zero; }

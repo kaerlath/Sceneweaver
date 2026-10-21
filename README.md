@@ -8,6 +8,8 @@ Shortcut: `/swedit`. The earlier `/crossedit` command remains an alias. Existing
 
 ## What is implemented
 
+- Nearby scene capture: choose a 1–200 game-unit radius, review a frozen model/VFX scan, exclude unwanted entries, and create a new scene anchored at your character. Save/export normally, then use Place stage origin here to relocate the arrangement. Mod-specific resource paths are flagged; terrain, collision, NPCs and mod files are not captured.
+
 - World picker → Effects nearby filters loaded VFX with resource filenames and distances. Highlight selected origin marks the latest matching snapshot with a gold ring and label while the picker is visible. Origins are not effect bounds, and ownership/scene names are unavailable.
 
 - Stagehand format 2 import/export (Stagehand 0.5.4+); legacy formats 0/1 still import. Projected light textures, including modpack textures, survive canonical and Stagehand saves. Intoner receives the light without its projection and a conversion note.
@@ -49,7 +51,7 @@ Requires .NET 10 and a current Dalamud API 15 installation. On Windows, the buil
 ./build.ps1
 ```
 
-The development DLL is `src/CrossFormat.Plugin/bin/Release/Sceneweaver.dll`. The distributable bundle is `dist/Sceneweaver-0.11.0.zip`. Keep all DLLs in the bundle together. Add the development DLL through Dalamud's development-plugin loading settings, load it, then use `/sceneweaver`. The plugin is not installed or enabled automatically by this build.
+The development DLL is `src/CrossFormat.Plugin/bin/Release/Sceneweaver.dll`. The distributable bundle is `dist/Sceneweaver-0.12.0.zip`. Keep all DLLs in the bundle together. Add the development DLL through Dalamud's development-plugin loading settings, load it, then use `/sceneweaver`. The plugin is not installed or enabled automatically by this build.
 
 ## Workflow
 
@@ -100,7 +102,7 @@ An unsaved project is written to `recovery.cross.json` in the plugin configurati
 
 ## Validation status
 
-The Release build and 75 automated conversion/save/catalog/folder/mod/live-session tests pass locally. Live tests cover placement transforms, updates, deletions, ownership, failure cleanup and location changes. The IPC signatures were checked against Stagehand source and the installed API assembly. A real five-object Stagehand autosave was converted with zero object omissions; Stagehand round-trip positions, rotations, scales, paths and colors matched. A real tree model was decoded from installed game data (1,534 vertices, 1,612 triangles), and its normalized fit and original dimensions were checked. A private fixture embedded real model/material/texture data at a nonexistent game path; preview loading resolved the embedded resources after canonical and Stagehand round trips.
+The Release build and 77 automated conversion/save/catalog/folder/mod/live-session tests pass locally. Live tests cover placement transforms, updates, deletions, ownership, failure cleanup and location changes. The IPC signatures were checked against Stagehand source and the installed API assembly. A real five-object Stagehand autosave was converted with zero object omissions; Stagehand round-trip positions, rotations, scales, paths and colors matched. A real tree model was decoded from installed game data (1,534 vertices, 1,612 triangles), and its normalized fit and original dimensions were checked. A private fixture embedded real model/material/texture data at a nonexistent game path; preview loading resolved the embedded resources after canonical and Stagehand round trips.
 
 The 0.2.0 UI was tested by the user in game. The newer texture rendering, Mods UI and live IPC display have **not** yet been verified inside Dalamud. Additional texture tests and a standalone colored rendering of actual game geometry/textures passed. Exports have **not** been visually compared in Intoner/Stagehand. Compilation and schema tests do not prove in-game behavior. Next validation steps are in `docs/IN_GAME_VALIDATION.md`.
 

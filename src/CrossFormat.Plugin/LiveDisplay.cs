@@ -86,6 +86,13 @@ public sealed partial class Plugin
         }
         else if (ImGui.Button("Hide in game")) live.Stop();
         ImGui.SameLine(); ImGui.TextWrapped(live.Status);
+        if (ImGui.Button("Place stage origin here")) Run(() =>
+        {
+            RequireLiveBackend(); var position = PlayerPosition();
+            Edit(() => scene.StageTranslation = position);
+            live.Start(() => LiveScene.Build(scene), liveClock.Elapsed);
+        });
+        if (ImGui.IsItemHovered()) ImGui.SetTooltip("Places the scene's origin at your character, preserving all relative positions. For captured scenes this is where you stood during capture.");
         if (live.CleanupPending && ImGui.Button("Retry hiding scene")) live.Stop();
         if (live.Notes.Length > 0 && ImGui.TreeNode("Live display details"))
         {
