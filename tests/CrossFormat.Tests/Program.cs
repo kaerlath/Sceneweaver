@@ -205,5 +205,6 @@ GroupTests.Run(Test);
 WorldPickTests.Run(Test);
 EditorUpdateTests.Run(Test);
 ReceivedStageTests.Run(Test, testDirectory);
+IntonerSceneTests.Run(Test, testDirectory);
 Console.WriteLine($"{passed} passed; {failed} failed. Test artifacts: {testDirectory}");
 Environment.ExitCode=failed==0?0:1;

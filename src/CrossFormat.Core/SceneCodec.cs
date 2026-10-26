@@ -34,7 +34,8 @@ public static class SceneCodec
     private static SceneProject ImportIntoner(JsonObject root)
     {
         int version = root["FormatVersion"]?.GetValue<int>() ?? 0;
-        if (version is not (1 or 2)) throw new InvalidDataException($"Unsupported Intoner version {version}.");
+        if (version is not (1 or 2 or 3)) throw new InvalidDataException($"Unsupported Intoner version {version}.");
+        if (version == 3) root["Folders"] ??= new JsonArray();
         var s = new SceneProject { IntonerRoot = Copy(root), Name = root["Name"]!.GetValue<string>(), Id = root["Id"]!.GetValue<Guid>(), Revision = root["Revision"]!.GetValue<long>(), CreatedAtUtc = root["CreatedAtUtc"]!.GetValue<DateTime>() };
         if (s.Revision <= 0 || s.CreatedAtUtc == default || root["Folders"] is not JsonArray) throw new InvalidDataException("Invalid Intoner layout metadata.");
         _ = root["ExportedAtUtc"]!.GetValue<DateTime>(); _ = root["UpdatedAtUtc"]!.GetValue<DateTime>();
@@ -79,6 +80,7 @@ public static class SceneCodec
             }
             s.Objects.Add(o);
         }
+        if (version == 3) IntonerGroups.Import(s, root);
         s.ImportNotes.Add("Intoner world coordinates imported with an identity Stagehand placement. Set Stage placement only when needed.");
         return s;
     }
@@ -188,10 +190,11 @@ public static class SceneCodec
         var now = DateTime.UtcNow;
         var root = new JsonObject
         {
-            ["DocumentKind"] = "object-layout", ["FormatVersion"] = 2, ["Id"] = s.Id,
+            ["DocumentKind"] = "object-layout", ["FormatVersion"] = s.IntonerRoot["FormatVersion"]?.GetValue<int>() == 3 ? 3 : 2, ["Id"] = s.Id,
             ["Name"] = s.Name, ["Revision"] = s.Revision, ["CreatedAtUtc"] = s.CreatedAtUtc,
             ["UpdatedAtUtc"] = now, ["ExportedAtUtc"] = now,
         };
+        if (root["FormatVersion"]!.GetValue<int>() == 3) root["Groups"] = IntonerGroups.Export(s);
         var objects = new JsonArray(); root["Objects"] = objects;
         var folders = new JsonArray(); root["Folders"] = folders;
         var folderPaths = new HashSet<string>(StringComparer.Ordinal);
@@ -202,6 +205,7 @@ public static class SceneCodec
         }
         foreach (var o in s.Objects)
         {
+            if (o.Kind == AssetKind.Group && o.IntonerSource["Group"] != null) continue;
             if (o.Kind == AssetKind.Group) { issues.Add(new(o.Name, "Group structure flattened for Intoner; child world transforms and inherited visibility are preserved.")); continue; }
             if (o.Kind is AssetKind.Weapon or AssetKind.Sound or AssetKind.Unknown) { issues.Add(new(o.Name, "No supported Intoner object type; retained in canonical project.", true)); continue; }
             if (o.Kind != AssetKind.Light && o.StagehandSource["ModpackId"] is JsonValue mod && !string.IsNullOrEmpty(mod.GetValue<string>()))
@@ -228,13 +232,15 @@ public static class SceneCodec
             }
             var t = TransformMath.ToWorld(s, o);
             var location = source?.CreatedIn ?? new ObjectLocationData(0, "", (uint)Math.Max(0, s.StagehandRoot["Info"]?["IntendedTerritoryType"]?.GetValue<int>() ?? 0), "", 0, 0, 0, 0);
-            var w = new WorldObject(o.Id, o.Name, Enum.Parse<WorldObjectKind>(o.Kind.ToString()), SceneHierarchy.Visible(s, o),
+            bool preservesGroup = o.ParentId is Guid owner && s.Objects.Any(g => g.Id == owner && g.IntonerSource["Group"] != null);
+            var w = new WorldObject(o.Id, o.Name, Enum.Parse<WorldObjectKind>(o.Kind.ToString()), preservesGroup ? o.Visible : SceneHierarchy.Visible(s, o),
                 new(I(t.Position), I(t.Rotation), I(t.Scale)), source?.CreatedAtUtc ?? s.CreatedAtUtc, location, source?.CollectionId ?? "", model);
             var serialized = Node(w);
             // Validate against the actual upstream DTO with unknown members forbidden.
             var strict = new JsonSerializerOptions(IntonerOptions) { UnmappedMemberHandling = System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow };
             _ = serialized.Deserialize<WorldObject>(strict);
-            objects.Add(new JsonObject { ["FolderPath"] = o.Folder, ["Locked"] = o.Locked, ["Object"] = serialized });
+            objects.Add(new JsonObject { ["FolderPath"] = o.Folder, ["Locked"] = o.Locked, ["Object"] = serialized,
+                ["GroupId"] = o.ParentId is Guid parent && s.Objects.Any(g => g.Id == parent && g.IntonerSource["Group"] != null) ? JsonValue.Create(parent) : null });
             if (folderPaths.Add(o.Folder)) folders.Add(new JsonObject { ["Path"] = o.Folder, ["Color"] = null });
             if (o.StagehandSource.Count > 0) issues.Add(new(o.Name, "Stagehand metadata and fields without Intoner equivalents remain in the canonical project."));
             if (o.IntonerSource.Count > 0) issues.Add(new(o.Name, "Intoner export uses the verified schema; any unknown source fields remain in the canonical project."));

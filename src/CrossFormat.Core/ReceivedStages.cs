@@ -12,7 +12,7 @@ public sealed record ReceivedStageSnapshot(string Id, string Name, string Author
 public static class ReceivedStages
 {
     // Never keep cache references in the imported project: they may be evicted at any time.
-    public static SceneProject Import(ReceivedStageSnapshot snapshot)
+    public static SceneProject Import(ReceivedStageSnapshot snapshot, long maxCopiedBytes = 128L * 1024 * 1024)
     {
         if (snapshot.Definition.Length > ProjectFiles.MaxInputBytes / 2) throw new InvalidDataException("Received definition is too large.");
         var scene = SceneCodec.Import(snapshot.Definition);
@@ -34,7 +34,7 @@ public static class ReceivedStages
                 if (!embeddedByPath.TryGetValue(path, out var embedded))
                 {
                     using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-                    if (file.Length > ModImport.MaxResourceBytes || total + file.Length > 128L * 1024 * 1024) throw new InvalidDataException("Received mods exceed the import limit (64 MB per file / 128 MB total).");
+                    if (file.Length > ModImport.MaxResourceBytes || total + file.Length > maxCopiedBytes) throw new InvalidDataException("Received mods exceed the import limit (64 MB per file / 128 MB total).");
                     var bytes = new byte[checked((int)file.Length)]; file.ReadExactly(bytes); total += bytes.Length;
                     embedded = JsonSerializer.SerializeToNode<ModResourceDefinition>(new EmbeddedModResourceDefinition
                     { CompressionScheme = ModCompressionScheme.Zlib, CompressedDataBytes = EmbeddedModResourceDefinition.CompressDataBytes(bytes, ModCompressionScheme.Zlib) }, StageDefinition.StandardSerializerOptions)!;
