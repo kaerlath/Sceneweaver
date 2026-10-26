@@ -63,7 +63,7 @@ public sealed partial class Plugin
         {
             throw new InvalidDataException($"Could not open {Path.GetFileName(path)}. Your current scene has been kept.\n\n{e.Message}", e);
         }
-        if (dirty) status = $"Ready to open {Path.GetFileName(path)} ({imported.Objects.Count} objects). Choose whether to discard your unsaved changes below.";
+        if (dirty) status = $"Ready to open {Path.GetFileName(path)} ({imported.Objects.Count} objects). Confirm whether to discard your unsaved changes in the dialog.";
         GuardReplace(() =>
         {
             ReplaceScene(imported); inputPath = path; knownHashes[Path.GetFullPath(path)] = hash;
@@ -79,6 +79,8 @@ public sealed partial class Plugin
         if (ImGui.Button("Open Stagehand...")) Pick("Stagehand", false, "", ImportFile);
         ImGui.SameLine(); if (ImGui.Button("Open Intoner...")) Pick("Intoner", false, "", ImportFile);
         ImGui.SameLine(); if (ImGui.Button("Open project...")) Pick("Sceneweaver", false, "", ImportFile);
+        ImGui.SameLine(); if (ImGui.Button("Insert scene as group...")) Pick("Sceneweaver", false, "", InsertSceneFile);
+        if (ImGui.IsItemHovered()) ImGui.SetTooltip("Merge a saved Sceneweaver, Stagehand or Intoner scene into this project. Place its center at your character (or stage origin when logged out).");
         ImGui.EndDisabled();
         if (filePicker != null) { ImGui.SameLine(); ImGui.TextDisabled("Windows file picker is open..."); }
     }

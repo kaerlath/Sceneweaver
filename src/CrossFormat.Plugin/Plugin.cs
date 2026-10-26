@@ -78,6 +78,7 @@ public sealed partial class Plugin : IDalamudPlugin
     }
     private void ReplaceScene(SceneProject value)
     {
+        receivedImport = null; intonerSceneImport = null; pendingDestructive = null; showReplacePrompt = false;
         live.Stop("Live display hidden while switching projects."); vfxPreview.Stop();
         modOpenTask = null; modBuildTask = null; modImport = null; modBuilt = null; modPreview = null;
         updateModId = ""; restoreModChoices = null;
@@ -85,7 +86,7 @@ public sealed partial class Plugin : IDalamudPlugin
         scene = value; selected = scene.Objects.FirstOrDefault()?.Id ?? Guid.Empty;
         undo.Clear(); redo.Clear(); pending = null; dirty = false; focusScene = true;
     }
-    private void GuardReplace(Action action) { if (dirty) pendingDestructive = action; else action(); }
+    private void GuardReplace(Action action) { if (dirty) { pendingDestructive = action; showReplacePrompt = true; } else action(); }
 
     private void Draw()
     {
@@ -119,7 +120,7 @@ public sealed partial class Plugin : IDalamudPlugin
                 if (ImGui.Button("Close")) ImGui.CloseCurrentPopup();
                 ImGui.EndPopup();
             }
-            if (ImGui.Button("New")) GuardReplace(() => ReplaceScene(new()));
+            if (ImGui.Button("New")) GuardReplace(NewScene);
             ImGui.SameLine();
             ImGui.BeginDisabled(undo.Count == 0);
             if (ImGui.Button("Undo")) { redo.Push(JsonSerializer.Serialize(scene, ProjectJson.Options)); scene = JsonSerializer.Deserialize<SceneProject>(undo.Pop(), ProjectJson.Options)!; dirty = true; pending = null; live.MarkChanged(); }
@@ -128,13 +129,7 @@ public sealed partial class Plugin : IDalamudPlugin
             ImGui.EndDisabled(); ImGui.SameLine(); ImGui.TextDisabled($"{scene.Name}  /  {scene.Objects.Count} objects  /  {(dirty ? "Unsaved changes" : "No unsaved changes")}");
             ImGui.Separator();
             DrawLiveControls();
-            if (pendingDestructive != null)
-            {
-                ImGui.TextWrapped("This will replace your unsaved scene. Save it first or discard the changes below.");
-                if (ImGui.Button("Discard changes and continue")) { var action = pendingDestructive; pendingDestructive = null; Run(action); }
-                ImGui.SameLine(); if (ImGui.Button("Keep editing")) pendingDestructive = null;
-                ImGui.Separator();
-            }
+            DrawReplacePrompt();
             if (ImGui.BeginTabBar("workspace"))
             {
                 if (ImGui.BeginTabItem("Discover assets")) { DrawAssets(); ImGui.EndTabItem(); }
