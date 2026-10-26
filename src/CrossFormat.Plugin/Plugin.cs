@@ -141,6 +141,7 @@ public sealed partial class Plugin : IDalamudPlugin
                 if (ImGui.BeginTabItem("Scene", focusScene ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None))
                 { focusScene = false; DrawScene(); ImGui.EndTabItem(); }
                 if (ImGui.BeginTabItem("World picker")) { DrawWorldPicker(); ImGui.EndTabItem(); }
+                if (ImGui.BeginTabItem("Received stages")) { DrawReceivedStages(); ImGui.EndTabItem(); }
                 if (ImGui.BeginTabItem("Mods")) { DrawMods(); ImGui.EndTabItem(); }
                 if (ImGui.BeginTabItem("Save & export")) { DrawFiles(); ImGui.EndTabItem(); }
                 ImGui.EndTabBar();
