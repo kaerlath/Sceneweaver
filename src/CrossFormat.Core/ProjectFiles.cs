@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.IO.Compression;
 using System.Text;
 
 namespace CrossFormat.Core;
@@ -8,6 +9,19 @@ public sealed record SavePlan(IReadOnlyList<SaveTarget> Targets, IReadOnlyList<C
 
 public static class ProjectFiles
 {
+    public static string DefaultBackupDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Sceneweaver", "Backups");
+    private static void WriteBackup(string source, string destination)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+        using var file = new FileStream(destination, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
+        using (var archive = new ZipArchive(file, ZipArchiveMode.Create, true))
+        {
+            archive.CreateEntryFromFile(source, "original");
+            using var writer = new StreamWriter(archive.CreateEntry("destination.txt").Open());
+            writer.Write(source);
+        }
+        file.Flush(true);
+    }
     public const long MaxInputBytes = 256 * 1024 * 1024;
     public static string Read(string path)
     {
@@ -28,7 +42,7 @@ public static class ProjectFiles
 
     // Files are staged before any replacement. Rollback covers ordinary I/O failures;
     // no filesystem can promise a single atomic commit across arbitrary directories.
-    public static void Commit(SavePlan plan, Action<int>? beforeReplace = null)
+    public static void Commit(SavePlan plan, Action<int>? beforeReplace = null, string? backupDirectory = null)
     {
         var targets = plan.Targets.Select(t => t with { Path = Path.GetFullPath(t.Path) }).ToArray();
         if (targets.Any(t => Encoding.UTF8.GetByteCount(t.Content) > MaxInputBytes)) throw new InvalidDataException("Output exceeds the 256 MB project limit. Split large mod libraries between projects.");
@@ -43,7 +57,7 @@ public static class ProjectFiles
                 if (t.ExpectedHash is not null && Hash(t.Path) != t.ExpectedHash) throw new IOException($"File changed since review: {t.Path}");
                 Directory.CreateDirectory(Path.GetDirectoryName(t.Path)!);
                 var temp = t.Path + "." + token + ".tmp";
-                var backup = t.Path + "." + token + ".bak";
+                var backup = Path.Combine(backupDirectory ?? DefaultBackupDirectory, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(t.Path.ToUpperInvariant()))), token + ".zip");
                 staged.Add((t, temp, backup, File.Exists(t.Path)));
                 using var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None);
                 var bytes = Encoding.UTF8.GetBytes(t.Content);
@@ -54,7 +68,12 @@ public static class ProjectFiles
                 var entry = staged[n];
                 beforeReplace?.Invoke(n);
                 if (entry.Target.ExpectedHash is not null && Hash(entry.Target.Path) != entry.Target.ExpectedHash) throw new IOException($"File changed during save: {entry.Target.Path}");
-                if (entry.Existed) File.Replace(entry.Temp, entry.Target.Path, entry.Backup);
+                if (entry.Existed)
+                {
+                    WriteBackup(entry.Target.Path, entry.Backup);
+                    if (entry.Target.ExpectedHash is not null && Hash(entry.Target.Path) != entry.Target.ExpectedHash) throw new IOException($"File changed while backing up: {entry.Target.Path}");
+                    File.Replace(entry.Temp, entry.Target.Path, null);
+                }
                 else File.Move(entry.Temp, entry.Target.Path);
                 committed.Add((entry.Target, entry.Backup, entry.Existed));
             }
@@ -66,7 +85,17 @@ public static class ProjectFiles
             {
                 try
                 {
-                    if (entry.Existed) File.Move(entry.Backup, entry.Target.Path, true);
+                    if (entry.Existed)
+                    {
+                        var restore = entry.Target.Path + "." + token + ".restore";
+                        try
+                        {
+                            using (var archive = ZipFile.OpenRead(entry.Backup)) archive.GetEntry("original")!.ExtractToFile(restore, true);
+                            if (File.Exists(entry.Target.Path)) File.Replace(restore, entry.Target.Path, null);
+                            else File.Move(restore, entry.Target.Path);
+                        }
+                        finally { if (File.Exists(restore)) File.Delete(restore); }
+                    }
                     else File.Delete(entry.Target.Path);
                 }
                 catch (Exception e) { rollbackErrors.Add(new IOException($"Recovery backup: {entry.Backup}", e)); }
