@@ -3,7 +3,7 @@
     "Author": "Sceneweaver contributors",
     "Name": "Sceneweaver",
     "InternalName": "Sceneweaver",
-    "AssemblyVersion": "0.15.1.0",
+    "AssemblyVersion": "0.15.2.0",
     "Description": "Development preview: shared scene editor for Intoner and Stagehand, with dual-save, conversion reports and base-color asset previews. Open with /sceneweaver. In-game validation is pending.",
     "ApplicableVersion": "any",
     "Tags": [
@@ -20,9 +20,9 @@
     "Punchline": "One scene. Multiple stages.",
     "AcceptsFeedback": true,
     "RepoUrl": "https://github.com/kaerlath/Sceneweaver",
-    "DownloadLinkInstall": "https://github.com/kaerlath/Sceneweaver/releases/download/v0.15.1/Sceneweaver-0.15.1.zip",
-    "DownloadLinkUpdate": "https://github.com/kaerlath/Sceneweaver/releases/download/v0.15.1/Sceneweaver-0.15.1.zip",
-    "DownloadLinkTesting": "https://github.com/kaerlath/Sceneweaver/releases/download/v0.15.1/Sceneweaver-0.15.1.zip",
-    "LastUpdate": 1793076872
+    "DownloadLinkInstall": "https://github.com/kaerlath/Sceneweaver/releases/download/v0.15.2/Sceneweaver-0.15.2.zip",
+    "DownloadLinkUpdate": "https://github.com/kaerlath/Sceneweaver/releases/download/v0.15.2/Sceneweaver-0.15.2.zip",
+    "DownloadLinkTesting": "https://github.com/kaerlath/Sceneweaver/releases/download/v0.15.2/Sceneweaver-0.15.2.zip",
+    "LastUpdate": 1793149587
   }
 ]

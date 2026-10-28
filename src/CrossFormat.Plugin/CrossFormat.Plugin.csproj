@@ -1,7 +1,12 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
-  <PropertyGroup><AssemblyName>Sceneweaver</AssemblyName><Version>0.15.1</Version><Authors>Sceneweaver contributors</Authors><PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression><TargetFramework>net10.0-windows</TargetFramework></PropertyGroup>
+  <PropertyGroup><AssemblyName>Sceneweaver</AssemblyName><Version>0.15.2</Version><Authors>Sceneweaver contributors</Authors><PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression><TargetFramework>net10.0-windows</TargetFramework></PropertyGroup>
   <ItemGroup><ProjectReference Include="../CrossFormat.Core/CrossFormat.Core.csproj" /><ProjectReference Include="../CrossFormat.Assets/CrossFormat.Assets.csproj" /></ItemGroup>
   <ItemGroup>
     <PackageReference Include="Penumbra.Api" Version="5.19.1" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.10" />
   </ItemGroup>
+  <Target Name="VerifyPenumbraRuntimeDependencies" AfterTargets="Build">
+    <Error Condition="!Exists('$(TargetDir)Microsoft.Extensions.Logging.Abstractions.dll')" Text="Penumbra browsing requires Microsoft.Extensions.Logging.Abstractions.dll in the release package." />
+    <Error Condition="!Exists('$(TargetDir)Microsoft.Extensions.DependencyInjection.Abstractions.dll')" Text="Penumbra logging requires Microsoft.Extensions.DependencyInjection.Abstractions.dll in the release package." />
+  </Target>
 </Project>
