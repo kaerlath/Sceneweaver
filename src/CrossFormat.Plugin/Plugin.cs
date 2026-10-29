@@ -129,7 +129,7 @@ public sealed partial class Plugin : IDalamudPlugin
             if (ImGui.Button("Redo")) { undo.Push(JsonSerializer.Serialize(scene, ProjectJson.Options)); scene = JsonSerializer.Deserialize<SceneProject>(redo.Pop(), ProjectJson.Options)!; dirty = true; pending = null; live.MarkChanged(); }
             ImGui.EndDisabled(); ImGui.SameLine(); ImGui.TextDisabled($"{scene.Name}  /  {scene.Objects.Count} objects  /  {(dirty ? "Unsaved changes" : "No unsaved changes")}");
             ImGui.Separator();
-            DrawLiveControls();
+            DrawDisplayStatus();
             DrawReplacePrompt();
             if (ImGui.BeginTabBar("workspace"))
             {
@@ -137,9 +137,9 @@ public sealed partial class Plugin : IDalamudPlugin
                 if (ImGui.BeginTabItem("Scene", focusScene ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None))
                 { focusScene = false; DrawScene(); ImGui.EndTabItem(); }
                 if (ImGui.BeginTabItem("World picker")) { DrawWorldPicker(); ImGui.EndTabItem(); }
-                if (ImGui.BeginTabItem("Intoner scenes")) { DrawIntonerScenes(); ImGui.EndTabItem(); }
-                if (ImGui.BeginTabItem("Received stages")) { DrawReceivedStages(); ImGui.EndTabItem(); }
-                if (ImGui.BeginTabItem("Mods")) { DrawMods(); ImGui.EndTabItem(); }
+                if (ImGui.BeginTabItem("Stagehand")) { DrawStagehandWorkspace(); ImGui.EndTabItem(); }
+                if (ImGui.BeginTabItem("Intoner")) { DrawIntonerWorkspace(); ImGui.EndTabItem(); }
+
                 if (ImGui.BeginTabItem("Save & export")) { DrawFiles(); ImGui.EndTabItem(); }
                 ImGui.EndTabBar();
             }
@@ -161,7 +161,7 @@ public sealed partial class Plugin : IDalamudPlugin
         ImGui.SameLine(); if (ImGui.Button("Add VFX")) Edit(() => { var o = new SceneObject { Kind = AssetKind.Vfx, Name = "New VFX", Position = NewObjectPosition() }; scene.Objects.Add(o); selected = o.Id; });
         ImGui.SameLine(); if (ImGui.Button("Add light")) Edit(() => { var o = new SceneObject { Kind = AssetKind.Light, Name = "New light", Position = NewObjectPosition(), Light = JsonSerializer.SerializeToNode(new Stagehand.Definitions.Objects.LightDefinition(), ProjectJson.Options)!.AsObject() }; scene.Objects.Add(o); selected = o.Id; });
         ImGui.SameLine(); if (ImGui.Button("Add group")) Edit(() => { var g = new SceneObject { Kind = AssetKind.Group, Name = "New group" }; scene.Objects.Add(g); selected = g.Id; });
-        var sceneHeight = Math.Max(240, ImGui.GetContentRegionAvail().Y - 160);
+        var sceneHeight = Math.Max(240, ImGui.GetContentRegionAvail().Y - 12);
         ImGui.BeginChild("objects", new(300, sceneHeight), true);
         ImGui.TextDisabled("SCENE OBJECTS");
         ImGui.BeginDisabled(selected == Guid.Empty);
@@ -175,6 +175,10 @@ public sealed partial class Plugin : IDalamudPlugin
         if (item != null) DrawInspector(item);
         else ImGui.TextWrapped("Select an object to edit its transform and appearance.");
         ImGui.EndChild();
+    }
+
+    private void DrawStagePlacement()
+    {
         if (ImGui.CollapsingHeader("Stage placement for live display / Intoner export"))
         {
             ImGui.TextWrapped("Stagehand uses local positions. Intoner output bakes this placement into world positions. Identity is the default; these values are saved in the canonical project.");
@@ -187,7 +191,8 @@ public sealed partial class Plugin : IDalamudPlugin
 
     private void DrawInspector(SceneObject o)
     {
-        ImGui.TextDisabled("OBJECT INSPECTOR");
+        ImGui.TextDisabled("SHARED OBJECT SETTINGS");
+        ImGui.TextWrapped("Placement and appearance for the shared scene. Destination-specific settings are in Stagehand and Intoner.");
         ImGui.BeginDisabled(o.Locked);
         if (ImGui.Button("Move to my character")) Run(() =>
         {
@@ -195,19 +200,12 @@ public sealed partial class Plugin : IDalamudPlugin
             Edit(() => o.Position = position);
         });
         ImGui.EndDisabled();
-        if (ModResources.PackId(o).Length > 0)
-        {
-            ImGui.TextWrapped("Mod binding: " + (ModResources.Packs(scene)[ModResources.PackId(o)]?["DisplayName"]?.GetValue<string>() ?? "Missing modpack"));
-            ImGui.BeginDisabled(o.Locked);
-            if (ImGui.Button("Remove mod binding")) Edit(() => o.StagehandSource["ModpackId"] = "");
-            ImGui.EndDisabled();
-        }
         if (o.Kind == AssetKind.Vfx) DrawVfxPreview(o);
         else if (o.Kind != AssetKind.Group) previews.Draw(o, new(Math.Max(180, ImGui.GetContentRegionAvail().X), 220), true);
         var locked = o.Locked; if (ImGui.Checkbox("Locked", ref locked)) Edit(() => o.Locked = locked);
         ImGui.BeginDisabled(o.Locked || o.Kind == AssetKind.Unknown);
         DrawGroupParent(o);
-        DrawIntonerFeatures(o);
+
         string name = o.Name, path = o.AssetPath, folder = o.Folder, image = o.PreviewImagePath;
         bool visible = o.Visible; var p = o.Position; var r = o.RotationDegrees; var scale = o.Scale; var color = o.Color; var opacity = o.Opacity;
         if (ImGui.InputText("Name", ref name, 512)) Edit(() => o.Name = name);
@@ -223,7 +221,7 @@ public sealed partial class Plugin : IDalamudPlugin
         TransformMenu("scale", o.Scale, value => o.Scale = value, o.Kind == AssetKind.Group);
         if (o.Kind is AssetKind.BgObject or AssetKind.Vfx)
             if (ImGui.ColorEdit4("Color", ref color)) Edit(() => o.Color = color);
-        if (o.Kind == AssetKind.Vfx) DrawVfxPlayback(o);
+
         if (o.Kind is AssetKind.BgObject or AssetKind.Furniture)
             if (ImGui.SliderFloat("Opacity", ref opacity, 0, 1)) Edit(() => o.Opacity = opacity);
         if (ImGui.InputText("Preview PNG/JPG", ref image, 4096)) Edit(() => o.PreviewImagePath = image);
@@ -244,7 +242,7 @@ public sealed partial class Plugin : IDalamudPlugin
             SaveLibrary(); lastQuery = null; status = "Asset saved to favorites.";
         });
         ImGui.EndDisabled();
-        if (ModResources.PackId(o).Length > 0) ImGui.TextDisabled("Mod assets are kept in this project's Mods library.");
+        if (ModResources.PackId(o).Length > 0) ImGui.TextDisabled("Mod assets are kept in this project's Stagehand mod library.");
     }
 
     private void DrawObjectTree(Guid? parent)

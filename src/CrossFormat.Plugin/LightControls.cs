@@ -30,6 +30,10 @@ public sealed partial class Plugin
             changed = true;
         }
         ImGui.SameLine(); if (ImGui.Button("Clear texture")) { light.ProjectedTextureGamePath = ""; changed = true; }
+        ImGui.TextWrapped("Both plugins: texture path. For embedded texture resources, use Stagehand > Object settings.");
+    }
+    private void DrawLightModBinding(SceneObject o, LightDefinition light, ref bool changed)
+    {
         string packId = ModResources.PackId(o);
         if (ImGui.BeginCombo("Texture modpack", ModResources.Packs(scene)[packId]?["DisplayName"]?.GetValue<string>() ?? "Game textures"))
         {
@@ -47,6 +51,6 @@ public sealed partial class Plugin
                 { light.ProjectedTextureGamePath = resource.Key; changed = true; }
             ImGui.EndCombo();
         }
-        ImGui.TextWrapped("Import a Penumbra mod in Mods first to select its textures here. Projected texture paths are saved to Stagehand and Intoner 0.3+. Embedded texture modpacks remain portable through Stagehand; Intoner needs the matching mod resources.");
+        ImGui.TextWrapped("Import a Penumbra mod in Stagehand > Embedded mods first to select its textures here. Projected texture paths are saved to Stagehand and Intoner 0.3+. Embedded texture modpacks remain portable through Stagehand; Intoner needs the matching mod resources.");
     }
 }
