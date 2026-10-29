@@ -7,12 +7,16 @@ namespace Intoner.Objects.Api;
 /// <param name="Transparency"> transparency multiplier </param>
 /// <param name="DyeColor"> bgobject dye color in linear rgba </param>
 /// <param name="IsCoveredFromRain"> whether the bgobject draw object is flagged as covered by rain </param>
+/// <param name="ColliderDefinition"> selected set collider, or null when unassigned </param>
+/// <param name="CameraCollision"> camera collision state, null always defaults to true! </param>
 [MessagePackObject(keyAsPropertyName: true)]
 public sealed record BgObjectModelData(
     string ModelPath,
     float Transparency,
     ObjectVector4 DyeColor,
-    bool IsCoveredFromRain);
+    bool IsCoveredFromRain,
+    BgColliderDefinitionData? ColliderDefinition = null,
+    bool? CameraCollision = null);
 
 /// <summary> furniture color data </summary>
 /// <param name="StainId"> stain id used when custom color is disabled </param>
@@ -41,6 +45,7 @@ public sealed record FurnitureMaterialItemData(
 /// <param name="ItemRowId"> resolved item row id when known </param>
 /// <param name="AttachmentParentId"> parent furniture object id when this furniture is attached to another furniture item </param>
 /// <param name="MaterialItem"> furniture material item selected by the material slot </param>
+/// <param name="CameraCollision"> camera collision state, null always defaults to true! </param>
 [MessagePackObject(keyAsPropertyName: true)]
 public sealed record FurnitureModelData(
     string SharedGroupPath,
@@ -50,7 +55,8 @@ public sealed record FurnitureModelData(
     uint HousingRowId,
     uint ItemRowId,
     Guid? AttachmentParentId,
-    FurnitureMaterialItemData? MaterialItem = null);
+    FurnitureMaterialItemData? MaterialItem = null,
+    bool? CameraCollision = null);
 
 /// <summary> VFX model data </summary>
 /// <param name="VfxPath"> VFX game path </param>
@@ -116,6 +122,7 @@ public sealed record LightShadowData(
 /// <param name="Intensity"> light intensity multiplier </param>
 /// <param name="Shape"> light shape settings </param>
 /// <param name="Shadow"> light shadow settings </param>
+/// <param name="ProjectionTexturePath"> projection TEX game path, or empty for no texture </param>
 [MessagePackObject(keyAsPropertyName: true)]
 public sealed record LightModelData(
     ObjectVector3 Color,
@@ -124,7 +131,12 @@ public sealed record LightModelData(
     LightFlagsData Flags,
     float Intensity,
     LightShapeData Shape,
-    LightShadowData Shadow);
+    LightShadowData Shadow,
+    string ProjectionTexturePath = "")
+{
+    /// <summary> projection TEX game path, or empty for no texture </summary>
+    public string ProjectionTexturePath { get; init; } = ProjectionTexturePath ?? string.Empty;
+}
 
 /// <summary> object model payload </summary>
 /// <param name="BgObject"> bgobject model data for 'BgObject' objects </param>
@@ -143,12 +155,18 @@ public sealed record WorldObjectModelData(
 /// <param name="Transparency"> updated transparency multiplier, or null to keep the current value </param>
 /// <param name="DyeColor"> updated bgobject dye color, or null to keep the current value </param>
 /// <param name="IsCoveredFromRain"> updated covered by rain flag, or null to keep the current value </param>
+/// <param name="ColliderDefinition"> replacement set collider, or null to keep it </param>
+/// <param name="ClearColliderDefinition"> removes the selected collider and takes precedence over replacement </param>
+/// <param name="CameraCollision"> updated camera collision state, or null to keep it </param>
 [MessagePackObject(keyAsPropertyName: true)]
 public sealed record BgObjectModelPatchData(
     string? ModelPath = null,
     float? Transparency = null,
     ObjectVector4? DyeColor = null,
-    bool? IsCoveredFromRain = null);
+    bool? IsCoveredFromRain = null,
+    BgColliderDefinitionData? ColliderDefinition = null,
+    bool ClearColliderDefinition = false,
+    bool? CameraCollision = null);
 
 /// <summary> furniture color patch </summary>
 /// <param name="StainId"> updated stain id, or null to keep the current value </param>
@@ -165,12 +183,14 @@ public sealed record FurnitureColorPatchData(
 /// <param name="Color"> updated furniture color settings, or null to keep the current values </param>
 /// <param name="Transparency"> updated transparency multiplier, or null to keep the current value </param>
 /// <param name="OutlineColor"> updated outline color, or null to keep the current value </param>
+/// <param name="CameraCollision"> updated camera collision participation, or null to keep it </param>
 [MessagePackObject(keyAsPropertyName: true)]
 public sealed record FurnitureModelPatchData(
     string? SharedGroupPath = null,
     FurnitureColorPatchData? Color = null,
     float? Transparency = null,
-    ObjectOutlineColor? OutlineColor = null);
+    ObjectOutlineColor? OutlineColor = null,
+    bool? CameraCollision = null);
 
 /// <summary> VFX model patch </summary>
 /// <param name="VfxPath"> updated VFX game path, or null to keep the current path </param>
@@ -236,6 +256,7 @@ public sealed record LightShadowPatchData(
 /// <param name="Intensity"> updated intensity multiplier, or null to keep the current value </param>
 /// <param name="Shape"> updated shape settings, or null to keep the current values </param>
 /// <param name="Shadow"> updated shadow settings, or null to keep the current values </param>
+/// <param name="ProjectionTexturePath"> updated projection TEX game path, null to keep the current path, or empty to clear it </param>
 [MessagePackObject(keyAsPropertyName: true)]
 public sealed record LightModelPatchData(
     ObjectVector3? Color = null,
@@ -244,7 +265,8 @@ public sealed record LightModelPatchData(
     LightFlagsPatchData? Flags = null,
     float? Intensity = null,
     LightShapePatchData? Shape = null,
-    LightShadowPatchData? Shadow = null);
+    LightShadowPatchData? Shadow = null,
+    string? ProjectionTexturePath = null);
 
 /// <summary> object model patch payload </summary>
 /// <param name="BgObject"> bgobject model patch for 'BgObject' objects </param>
@@ -257,4 +279,3 @@ public sealed record WorldObjectModelPatch(
     FurnitureModelPatchData? Furniture = null,
     VfxModelPatchData? Vfx = null,
     LightModelPatchData? Light = null);
-

@@ -14,7 +14,7 @@ public enum TemporaryCollectionReplacementKind
 }
 
 /// <summary> one temporary object collection replacement </summary>
-[MessagePackObject(keyAsPropertyName: true)]
+[MessagePackObject(keyAsPropertyName: true, SuppressSourceGeneration = true)]
 public sealed record TemporaryCollectionReplacement
 {
     /// <summary> replacement kind </summary>

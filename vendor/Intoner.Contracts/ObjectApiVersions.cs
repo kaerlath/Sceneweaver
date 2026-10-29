@@ -4,7 +4,7 @@ namespace Intoner.Objects.Api;
 public static class ObjectApiVersions
 {
     /// <summary> breaking version number </summary>
-    public const int Breaking = 1;
+    public const int Breaking = 2;
     /// <summary> nonbreaking feature version number </summary>
     public const int Feature = 0;
 

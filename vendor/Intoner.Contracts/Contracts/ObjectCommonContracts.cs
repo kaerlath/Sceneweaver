@@ -45,8 +45,8 @@ public enum ObjectOutlineColor : byte
 /// <summary> loaded layout type </summary>
 public enum LoadedObjectLayoutType
 {
-    /// <summary> the local persistent default layout </summary>
-    Default = 1,
+    /// <summary> an enabled local persistent layout </summary>
+    Persistent = 1,
     /// <summary> a caller owned temporary source </summary>
     Temporary = 2,
 }
@@ -143,10 +143,9 @@ public sealed record WorldObjectTransform(
     ObjectVector3 RotationDegrees,
     ObjectVector3 Scale);
 
-/// <summary> object world and housing location context </summary>
-/// <param name="WorldId"> world id, or zero to use the current world on local create or import </param>
-/// <param name="WorldName"> world display name </param>
-/// <param name="TerritoryId"> territory id, or zero to use the current territory on local create or import </param>
+/// <summary> object world selection and territory or housing address </summary>
+/// <param name="Worlds"> allowed worlds, or null to use the current world on local create or import </param>
+/// <param name="TerritoryId"> territory id, or zero to use the current address on local create or import </param>
 /// <param name="TerritoryName"> territory display name </param>
 /// <param name="DivisionId"> housing division id </param>
 /// <param name="WardId"> housing ward id </param>
@@ -154,12 +153,10 @@ public sealed record WorldObjectTransform(
 /// <param name="RoomId"> apartment or housing room id </param>
 [MessagePackObject(keyAsPropertyName: true)]
 public sealed record ObjectLocationData(
-    ushort WorldId,
-    string WorldName,
+    ObjectWorldSelection? Worlds,
     uint TerritoryId,
     string TerritoryName,
     uint DivisionId,
     uint WardId,
     uint HouseId,
     uint RoomId);
-

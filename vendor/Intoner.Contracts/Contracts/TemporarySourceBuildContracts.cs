@@ -1,5 +1,6 @@
 using MessagePack;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Intoner.Objects.Api;
 
@@ -68,22 +69,17 @@ public sealed record TemporarySourceBuildResult(
     IReadOnlyList<TemporarySourceBuildDiagnostic> Diagnostics)
 {
     /// <summary> whether a complete source payload was produced </summary>
-    [IgnoreMember]
+    [IgnoreMember, JsonIgnore]
     public bool IsSuccess
         => Status is TemporarySourceBuildStatus.Success or TemporarySourceBuildStatus.CompletedWithWarnings;
 }
 
 internal static class TemporarySourceBuildResultWire
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        IgnoreReadOnlyProperties = true,
-    };
-
     public static byte[] Serialize(TemporarySourceBuildResult result)
-        => JsonSerializer.SerializeToUtf8Bytes(result, JsonOptions);
+        => JsonSerializer.SerializeToUtf8Bytes(result);
 
     public static TemporarySourceBuildResult Deserialize(byte[] payload)
-        => JsonSerializer.Deserialize<TemporarySourceBuildResult>(payload, JsonOptions)
+        => JsonSerializer.Deserialize<TemporarySourceBuildResult>(payload)
             ?? throw new InvalidDataException("Intoner returned an empty temporary source build result");
 }

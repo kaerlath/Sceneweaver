@@ -37,6 +37,7 @@ public static class IntonerGroups
             var raw=(JsonObject)group.IntonerSource["Group"]!.DeepClone();
             var t=TransformMath.ToWorld(scene,group);
             ObjectVector3 V(Vector3 v)=>new(v.X,v.Y,v.Z);
+            if(raw["CreatedIn"] is JsonNode location) raw["CreatedIn"]=IntonerLocationConverter.Upgrade(location);
             raw["Id"]=group.Id; raw["Name"]=group.Name; raw["FolderPath"]=group.Folder; raw["Locked"]=group.Locked;
             raw["Visible"]=SceneHierarchy.Visible(scene,group);
             raw["Transform"]=JsonSerializer.SerializeToNode(new WorldObjectTransform(V(t.Position),V(t.Rotation),V(t.Scale)),ProjectJson.Options);

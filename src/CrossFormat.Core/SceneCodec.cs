@@ -10,7 +10,7 @@ namespace CrossFormat.Core;
 public static class SceneCodec
 {
     private static readonly JsonSerializerOptions IntonerOptions = new(ProjectJson.Options)
-    { RespectNullableAnnotations = true, RespectRequiredConstructorParameters = true };
+    { RespectNullableAnnotations = true, RespectRequiredConstructorParameters = true, Converters = { new IntonerLocationConverter() } };
     private static JsonObject Copy(JsonObject value) => (JsonObject)value.DeepClone();
     private static JsonObject Node<T>(T value) => JsonSerializer.SerializeToNode(value, ProjectJson.Options)!.AsObject();
     private static Vector3 V(ObjectVector3 v) => new(v.X, v.Y, v.Z);
@@ -23,6 +23,7 @@ public static class SceneCodec
         using var check = JsonDocument.Parse(json, new JsonDocumentOptions { AllowDuplicateProperties = false });
         var root = JsonNode.Parse(json) as JsonObject ?? throw new InvalidDataException("Expected a JSON object.");
         if (root["DocumentKind"]?.GetValue<string>() == "cross-format-project") return ProjectJson.Load(json);
+        if(root["entries"] is JsonArray && root.ContainsKey("capturedIn") && root.ContainsKey("version")) return IntonerPrefabs.Import(root);
         SceneProject s;
         if (root["DocumentKind"]?.GetValue<string>() == "object-layout") s = ImportIntoner(root);
         else if (root["Info"] is JsonObject && root["Objects"] is JsonObject) s = ImportStagehand(root);
@@ -190,7 +191,7 @@ public static class SceneCodec
         var now = DateTime.UtcNow;
         var root = new JsonObject
         {
-            ["DocumentKind"] = "object-layout", ["FormatVersion"] = s.IntonerRoot["FormatVersion"]?.GetValue<int>() == 3 ? 3 : 2, ["Id"] = s.Id,
+            ["DocumentKind"] = "object-layout", ["FormatVersion"] = 3, ["Id"] = s.Id,
             ["Name"] = s.Name, ["Revision"] = s.Revision, ["CreatedAtUtc"] = s.CreatedAtUtc,
             ["UpdatedAtUtc"] = now, ["ExportedAtUtc"] = now,
         };
@@ -216,7 +217,7 @@ public static class SceneCodec
             var model = source?.Model ?? new WorldObjectModelData();
             switch (o.Kind)
             {
-                case AssetKind.BgObject: model = model with { BgObject = new(o.AssetPath, o.Opacity, I(o.Color), model.BgObject?.IsCoveredFromRain ?? false) }; break;
+                case AssetKind.BgObject: model = model with { BgObject = new(o.AssetPath, o.Opacity, I(o.Color), model.BgObject?.IsCoveredFromRain ?? false, model.BgObject?.ColliderDefinition, model.BgObject?.CameraCollision) }; break;
                 case AssetKind.Vfx:
                     var playback = VfxPlayback.For(o);
                     model = model with { Vfx = new VfxModelData(o.AssetPath, I(o.Color), playback.Speed, playback.Paused,
@@ -226,12 +227,12 @@ public static class SceneCodec
                     model = model with { Furniture = model.Furniture with { SharedGroupPath = o.AssetPath, Transparency = o.Opacity, Color = model.Furniture.Color with { CustomColor = I(o.Color) } } }; break;
                 case AssetKind.Light:
                     var light = LightSettings.Read(o);
-                    if (light.ProjectedTextureGamePath.Length > 0)
-                        issues.Add(new(o.Name, "Projected light textures are not supported by the Intoner contract. The texture and its mod binding remain in the Sceneweaver project and Stagehand export."));
+                    if (light.ProjectedTextureGamePath.Length > 0 && !string.IsNullOrEmpty(light.ModpackId))
+                        issues.Add(new(o.Name, "Projected light texture mod bindings cannot be embedded in Intoner layout JSON; the texture path is retained but its mod must be available in Intoner."));
                     model = model with { Light = ToIntonerLight(light) }; break;
             }
             var t = TransformMath.ToWorld(s, o);
-            var location = source?.CreatedIn ?? new ObjectLocationData(0, "", (uint)Math.Max(0, s.StagehandRoot["Info"]?["IntendedTerritoryType"]?.GetValue<int>() ?? 0), "", 0, 0, 0, 0);
+            var location = source?.CreatedIn ?? new ObjectLocationData(null, (uint)Math.Max(0, s.StagehandRoot["Info"]?["IntendedTerritoryType"]?.GetValue<int>() ?? 0), "", 0, 0, 0, 0);
             bool preservesGroup = o.ParentId is Guid owner && s.Objects.Any(g => g.Id == owner && g.IntonerSource["Group"] != null);
             var w = new WorldObject(o.Id, o.Name, Enum.Parse<WorldObjectKind>(o.Kind.ToString()), preservesGroup ? o.Visible : SceneHierarchy.Visible(s, o),
                 new(I(t.Position), I(t.Rotation), I(t.Scale)), source?.CreatedAtUtc ?? s.CreatedAtUtc, location, source?.CollectionId ?? "", model);
@@ -256,10 +257,10 @@ public static class SceneCodec
         EnableCharacterShadows = l.Flags.EnableCharacterShadow, EnableObjectShadows = l.Flags.EnableObjectShadow,
         Range = l.Shape.Range, FalloffFactor = l.Shape.Falloff, SpotLightAngleDegrees = l.Shape.LightAngle,
         AngularFalloffDegrees = l.Shape.FalloffAngle, FlatLightSkewAngleDegrees = new(l.Shape.AngleDegrees.X, l.Shape.AngleDegrees.Y),
-        CharacterShadowRange = l.Shadow.CharacterShadowRange, ShadowPlaneNear = l.Shadow.ShadowPlaneNear, ShadowPlaneFar = l.Shadow.ShadowPlaneFar,
+        ProjectedTextureGamePath = l.ProjectionTexturePath, CharacterShadowRange = l.Shadow.CharacterShadowRange, ShadowPlaneNear = l.Shadow.ShadowPlaneNear, ShadowPlaneFar = l.Shadow.ShadowPlaneFar,
     };
     private static LightModelData ToIntonerLight(LightDefinition l) => new(I(l.Color), (ObjectLightType)((int)l.Shape + 1), (ObjectLightFalloffType)l.FalloffFunction,
         new(l.EnableSpecularHighlights, l.EnableDynamicShadows, l.EnableCharacterShadows, l.EnableObjectShadows), l.Intensity,
         new(l.Range, l.FalloffFactor, l.SpotLightAngleDegrees, l.AngularFalloffDegrees, new(l.FlatLightSkewAngleDegrees.X, l.FlatLightSkewAngleDegrees.Y)),
-        new(l.CharacterShadowRange, l.ShadowPlaneNear, l.ShadowPlaneFar));
+        new(l.CharacterShadowRange, l.ShadowPlaneNear, l.ShadowPlaneFar), l.ProjectedTextureGamePath);
 }

@@ -38,13 +38,35 @@ public sealed record WorldObjectPatch(
 
 /// <summary> persistent object including editor organization state </summary>
 /// <param name="Object"> runtime object state </param>
-/// <param name="FolderPath"> folder path, or an empty string when ungrouped </param>
+/// <param name="FolderPath"> folder path, or an empty string at the owner root </param>
 /// <param name="Locked"> whether editing is locked </param>
+/// <param name="GroupId"> editing group in the same owner, or null for an independent object </param>
 [MessagePackObject(keyAsPropertyName: true)]
 public sealed record PersistentObject(
     WorldObject Object,
     string FolderPath,
-    bool Locked);
+    bool Locked,
+    Guid? GroupId = null);
+
+/// <summary> flat editing group metadata </summary>
+/// <param name="Id"> stable group identity </param>
+/// <param name="Name"> editable group name </param>
+/// <param name="FolderPath"> organizational folder in the enclosing layout or standalone owner </param>
+/// <param name="Locked"> whether group editing is locked </param>
+/// <param name="Visible"> group visibility state </param>
+/// <param name="Transform"> saved pivot and orientation with uniform positive scale </param>
+/// <param name="CreatedAtUtc"> group creation timestamp </param>
+/// <param name="CreatedIn"> saved creation location </param>
+[MessagePackObject(keyAsPropertyName: true)]
+public sealed record PersistentSceneGroup(
+    Guid Id,
+    string Name,
+    string FolderPath,
+    bool Locked,
+    bool Visible,
+    WorldObjectTransform Transform,
+    DateTime CreatedAtUtc,
+    ObjectLocationData CreatedIn);
 
 /// <summary> revision checked persistent object write </summary>
 /// <param name="ExpectedRevision"> persistent scene revision that must still be current </param>
@@ -86,11 +108,15 @@ public sealed record PersistentObjectPatchRequest(
 /// <param name="Objects"> persistent object set </param>
 /// <param name="Folders"> ordered explicit folder paths, including empty folders </param>
 /// <param name="FolderColors"> folder colors keyed by folder path using '#RRGGBB' or '#RRGGBBAA'  </param>
-[MessagePackObject(keyAsPropertyName: true)]
+[MessagePackObject(keyAsPropertyName: true, SuppressSourceGeneration = true)]
 public sealed record PersistentObjectSet(
     IReadOnlyList<PersistentObject> Objects,
     IReadOnlyList<string> Folders,
-    IReadOnlyDictionary<string, string> FolderColors);
+    IReadOnlyDictionary<string, string> FolderColors)
+{
+    /// <summary> flat groups owned by this object set, including empty groups </summary>
+    public IReadOnlyList<PersistentSceneGroup> Groups { get; init; } = [];
+}
 
 /// <summary> identifying information for a saved layout </summary>
 /// <param name="Id"> saved layout id </param>
@@ -140,15 +166,23 @@ public sealed record SavedObjectLayoutSaveRequest(
     long ExpectedPersistentRevision,
     string Name);
 
-/// <summary> revision checked request to set the default layout </summary>
+/// <summary> revision checked request to enable or disable a saved layout </summary>
 /// <param name="ExpectedPersistentRevision"> persistent scene revision that must still be current </param>
 /// <param name="ExpectedLayoutRevision"> selected layout revision that must still be current </param>
 /// <param name="LayoutId"> layout to select </param>
+/// <param name="Enabled"> whether the layout contributes to the persistent workspace </param>
 [MessagePackObject(keyAsPropertyName: true)]
-public sealed record SavedObjectLayoutSetDefaultRequest(
+public sealed record SavedObjectLayoutSetEnabledRequest(
     long ExpectedPersistentRevision,
     long ExpectedLayoutRevision,
-    Guid LayoutId);
+    Guid LayoutId,
+    bool Enabled);
+
+/// <summary> revision checked placement destination change </summary>
+/// <param name="ExpectedPersistentRevision"> persistent revision that must still be current </param>
+/// <param name="LayoutId"> an enabled layout id, or null for standalone objects </param>
+[MessagePackObject(keyAsPropertyName: true)]
+public sealed record CreationLayoutRequest(long ExpectedPersistentRevision, Guid? LayoutId);
 
 /// <summary> revision checked saved layout deletion </summary>
 /// <param name="ExpectedPersistentRevision"> persistent scene revision that must still be current </param>
@@ -161,10 +195,10 @@ public sealed record SavedObjectLayoutDeleteRequest(
     Guid LayoutId);
 
 /// <summary> loaded layout source </summary>
-/// <param name="Type"> whether this is the local default layout or a temporary source </param>
-/// <param name="LayoutId"> saved layout id for the local default layout </param>
-/// <param name="SourceKey"> source key for temporary layouts, or the layout id string for the default layout </param>
-/// <param name="SourceSessionId"> source session id for temporary layouts, or 'Guid.Empty' for the local default layout </param>
+/// <param name="Type"> whether this is an enabled persistent layout or a temporary source </param>
+/// <param name="LayoutId"> saved layout id for a persistent layout </param>
+/// <param name="SourceKey"> source key for temporary layouts, or the layout id string for a persistent layout </param>
+/// <param name="SourceSessionId"> source session id for temporary layouts, or 'Guid.Empty' for persistent layouts </param>
 /// <param name="Name"> loaded layout display name </param>
 /// <param name="Revision"> current source revision </param>
 /// <param name="UpdatedAtUtc"> last update time for this source </param>
@@ -192,49 +226,52 @@ public sealed record RuntimeObjectState(
 
 /// <summary> current persistent object scene without caller owned temporary sources </summary>
 /// <param name="Revision"> persistent scene revision </param>
-/// <param name="DefaultLayout"> current default layout, if one is loaded </param>
-/// <param name="Standalone"> persistent objects and organization outside the default layout </param>
+/// <param name="Layouts"> enabled persistent layouts in workspace order </param>
+/// <param name="CreationLayoutId"> destination for new objects, or null for standalone storage </param>
+/// <param name="Standalone"> persistent objects and organization outside saved layouts </param>
 /// <param name="CurrentLocation"> current local world and territory context </param>
 [MessagePackObject(keyAsPropertyName: true)]
 public sealed record PersistentObjectSceneSnapshot(
     long Revision,
-    SavedObjectLayout? DefaultLayout,
+    IReadOnlyList<SavedObjectLayout> Layouts,
+    Guid? CreationLayoutId,
     PersistentObjectSet Standalone,
     ObjectLocationData CurrentLocation);
 
-/// <summary> desired content for the current default layout </summary>
-/// <param name="LayoutId"> current default layout returned by the scene snapshot </param>
+/// <summary> desired content for one enabled persistent layout </summary>
+/// <param name="LayoutId"> enabled layout returned by the scene snapshot </param>
 /// <param name="Content"> replacement objects and folder organization </param>
 [MessagePackObject(keyAsPropertyName: true)]
-public sealed record DefaultLayoutUpdate(
+public sealed record PersistentLayoutUpdate(
     Guid LayoutId,
     PersistentObjectSet Content);
 
 /// <summary> revision checked replacement of the current persistent scene </summary>
 /// <param name="ExpectedRevision"> persistent revision that must still be current </param>
 /// <param name="Standalone"> replacement standalone objects and organization </param>
-/// <param name="DefaultLayout"> replacement for the current default layout, or null to clear the default selection </param>
+/// <param name="Layouts"> replacements for enabled layouts; omitted owners are disabled without changing their files </param>
+/// <param name="CreationLayoutId"> a replacement owner id, or null for standalone storage </param>
 [MessagePackObject(keyAsPropertyName: true)]
 public sealed record PersistentObjectSceneApplyRequest(
     long ExpectedRevision,
     PersistentObjectSet Standalone,
-    DefaultLayoutUpdate? DefaultLayout);
+    IReadOnlyList<PersistentLayoutUpdate> Layouts,
+    Guid? CreationLayoutId);
 
 /// <summary> current composed object scene </summary>
 /// <param name="Revision"> local scene revision </param>
-/// <param name="PersistentRevision"> local persistent scene revision for standalone objects and the default layout </param>
-/// <param name="DefaultLayoutId"> current local default layout id, if one is loaded </param>
-/// <param name="StandaloneObjects"> local standalone objects that are not stored inside the default layout </param>
-/// <param name="LoadedLayouts"> loaded layout sources, including the default layout and all temporary layouts </param>
+/// <param name="PersistentRevision"> local persistent scene revision for standalone objects and enabled layouts </param>
+/// <param name="CreationLayoutId"> destination for new local objects, or null for standalone storage </param>
+/// <param name="StandaloneObjects"> local standalone objects that are not stored inside saved layouts </param>
+/// <param name="LoadedLayouts"> all enabled persistent layouts and temporary layout sources </param>
 /// <param name="RuntimeStates"> runtime state list for the composed scene </param>
 /// <param name="CurrentLocation"> current local world and territory context </param>
 [MessagePackObject(keyAsPropertyName: true)]
 public sealed record ObjectSceneSnapshot(
     long Revision,
     long PersistentRevision,
-    Guid? DefaultLayoutId,
+    Guid? CreationLayoutId,
     IReadOnlyList<WorldObject> StandaloneObjects,
     IReadOnlyList<LoadedObjectLayout> LoadedLayouts,
     IReadOnlyList<RuntimeObjectState> RuntimeStates,
     ObjectLocationData CurrentLocation);
-

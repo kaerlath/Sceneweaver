@@ -51,7 +51,7 @@ Test("Intoner output uses strict upstream WorldObject DTOs", () =>
     var root = JsonNode.Parse(Intoner(Fixture()))!;
     var strict = new JsonSerializerOptions(ProjectJson.Options) { RespectNullableAnnotations = true, RespectRequiredConstructorParameters = true, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
     foreach (var entry in root["Objects"]!.AsArray()) Assert(entry!["Object"]!.Deserialize<WorldObject>(strict) != null);
-    Assert(root["DocumentKind"]!.GetValue<string>() == "object-layout"); Assert(root["FormatVersion"]!.GetValue<int>() == 2);
+    Assert(root["DocumentKind"]!.GetValue<string>() == "object-layout"); Assert(root["FormatVersion"]!.GetValue<int>() == 3);
 });
 Test("Shared transforms, opacity and colors survive conversion both ways", () => { var s = SceneCodec.Import(Intoner(Fixture())); var b = s.Objects[0]; Assert(b.Position == new Vector3(1,2,3)); Assert(b.Scale == new Vector3(2,3,4)); Assert(b.RotationDegrees == new Vector3(20,30,40)); Assert(b.Opacity == .75f); Assert(b.Color == new Vector4(.1f,.2f,.3f,1)); var d = JsonSerializer.Deserialize<StageDefinition>(Stage(s), StageDefinition.StandardSerializerOptions)!; Assert(d.Objects.Values.OfType<BgObjectDefinition>().Single().IsDisabled); });
 Test("All light fields survive cross conversion", () =>
@@ -210,6 +210,7 @@ WorldPickTests.Run(Test);
 EditorUpdateTests.Run(Test);
 ReceivedStageTests.Run(Test, testDirectory);
 IntonerSceneTests.Run(Test, testDirectory);
+Intoner030Tests.Run(Test);
 SceneMergeTests.Run(Test, testDirectory);
 Console.WriteLine($"{passed} passed; {failed} failed. Test artifacts: {testDirectory}");
 Environment.ExitCode=failed==0?0:1;

@@ -47,6 +47,6 @@ public sealed partial class Plugin
                 { light.ProjectedTextureGamePath = resource.Key; changed = true; }
             ImGui.EndCombo();
         }
-        ImGui.TextWrapped("Import a Penumbra mod in Mods first to select its textures here. Projected textures are saved to Stagehand; Intoner exports keep the light without its projection.");
+        ImGui.TextWrapped("Import a Penumbra mod in Mods first to select its textures here. Projected texture paths are saved to Stagehand and Intoner 0.3+. Embedded texture modpacks remain portable through Stagehand; Intoner needs the matching mod resources.");
     }
 }

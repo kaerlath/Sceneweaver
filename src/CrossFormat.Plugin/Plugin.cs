@@ -83,6 +83,7 @@ public sealed partial class Plugin : IDalamudPlugin
         modOpenTask = null; modBuildTask = null; modImport = null; modBuilt = null; modPreview = null;
         updateModId = ""; restoreModChoices = null;
         ClearWorldPicker();
+        intonerDrafts.Clear();
         scene = value; selected = scene.Objects.FirstOrDefault()?.Id ?? Guid.Empty;
         undo.Clear(); redo.Clear(); pending = null; dirty = false; focusScene = true;
     }
@@ -206,6 +207,7 @@ public sealed partial class Plugin : IDalamudPlugin
         var locked = o.Locked; if (ImGui.Checkbox("Locked", ref locked)) Edit(() => o.Locked = locked);
         ImGui.BeginDisabled(o.Locked || o.Kind == AssetKind.Unknown);
         DrawGroupParent(o);
+        DrawIntonerFeatures(o);
         string name = o.Name, path = o.AssetPath, folder = o.Folder, image = o.PreviewImagePath;
         bool visible = o.Visible; var p = o.Position; var r = o.RotationDegrees; var scale = o.Scale; var color = o.Color; var opacity = o.Opacity;
         if (ImGui.InputText("Name", ref name, 512)) Edit(() => o.Name = name);

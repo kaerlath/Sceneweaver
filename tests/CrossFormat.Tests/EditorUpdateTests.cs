@@ -38,11 +38,11 @@ internal static class EditorUpdateTests
             Assert(StageDefinition.TryParseDefinitionString(output.Json, out _));
             Assert(SceneCodec.Import(LiveScene.Build(scene).Definition).Objects.Count == 2);
         });
-        test("Intoner export reports projected texture loss while preserving canonical data", () =>
+        test("Intoner export preserves projected texture paths and canonical data", () =>
         {
             var scene = LightFixture(); var before = ProjectJson.Save(scene);
             var result = SceneCodec.Export(scene, SceneFormat.Intoner);
-            Assert(result.Issues.Any(i => i.Message.Contains("Projected light textures")));
+            Assert(LightSettings.Read(SceneCodec.Import(result.Json).Objects.Single()).ProjectedTextureGamePath == LightSettings.Read(scene.Objects.Single(o=>o.Kind==AssetKind.Light)).ProjectedTextureGamePath);
             Assert(SceneCodec.Import(result.Json).Objects.Single().Kind == AssetKind.Light);
             Assert(ProjectJson.Save(scene) == before);
         });
